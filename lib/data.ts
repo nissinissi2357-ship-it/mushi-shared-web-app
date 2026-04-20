@@ -1,5 +1,5 @@
 import { hashPasscode } from "@/lib/auth";
-import { buildSummaries, fallbackLogs, fallbackMembers } from "@/lib/mock-data";
+import { buildSummaries, fallbackLogs, fallbackMembers, fallbackPointEntries } from "@/lib/mock-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   LoginResult,
@@ -7,7 +7,10 @@ import type {
   MemberRole,
   ObservationExportLog,
   ObservationInsertInput,
-  ObservationLog
+  ObservationLog,
+  ObservationUpdateInput,
+  PointEntry,
+  PointEntryInput
 } from "@/lib/types";
 
 type DataResult = {
@@ -19,6 +22,34 @@ type DataResult = {
 type SessionMember = {
   memberId: string;
   role: MemberRole;
+};
+
+type ClubMemberRow = {
+  id: string;
+  display_name: string;
+  role: MemberRole;
+  passcode_hash?: string | null;
+};
+
+type ObservationRow = {
+  id: string;
+  member_id: string;
+  observed_at: string;
+  location: string;
+  species: string;
+  points: number;
+  scoring_memo: string;
+  image_path?: string | null;
+  guide_pdf_path?: string | null;
+};
+
+type PointEntryRow = {
+  id: string;
+  member_id: string;
+  awarded_at: string;
+  title: string;
+  description: string;
+  points: number;
 };
 
 export async function getAppData(): Promise<DataResult> {
@@ -53,7 +84,7 @@ export async function listMembers(): Promise<Member[]> {
     throw error;
   }
 
-  return (data ?? []).map(mapMemberRow);
+  return (data ?? []).map((row) => mapMemberRow(row as ClubMemberRow));
 }
 
 export async function getViewerFromSession(session: SessionMember | null): Promise<LoginResult | null> {
@@ -103,23 +134,30 @@ export async function loginMember(displayName: string, passcode: string): Promis
       throw new Error("合言葉が違います。");
     }
 
-    return buildViewer(mapMemberRow(data));
+    return buildViewer(mapMemberRow(data as ClubMemberRow));
   } catch (error) {
     const fallbackMember = fallbackMembers.find((member) => member.displayName === normalizedName);
     if (!fallbackMember || normalizedPasscode !== "1234") {
       throw error instanceof Error ? error : new Error("ログインに失敗しました。");
     }
 
+    const fallbackLogsForViewer =
+      fallbackMember.role === "captain" || fallbackMember.role === "admin"
+        ? fallbackLogs
+        : fallbackLogs.filter((log) => log.memberId === fallbackMember.id);
+    const fallbackPointsForViewer =
+      fallbackMember.role === "captain" || fallbackMember.role === "admin"
+        ? fallbackPointEntries
+        : fallbackPointEntries.filter((entry) => entry.memberId === fallbackMember.id);
+
     return {
       member: fallbackMember,
-      logs:
-        fallbackMember.role === "captain" || fallbackMember.role === "admin"
-          ? fallbackLogs
-          : fallbackLogs.filter((log) => log.memberId === fallbackMember.id),
+      logs: fallbackLogsForViewer,
+      pointEntries: fallbackPointsForViewer,
       summaries:
         fallbackMember.role === "captain" || fallbackMember.role === "admin"
-          ? buildSummaries(fallbackMembers, fallbackLogs)
-          : buildSummaries([fallbackMember], fallbackLogs.filter((log) => log.memberId === fallbackMember.id))
+          ? buildSummaries(fallbackMembers, fallbackLogs, fallbackPointEntries)
+          : buildSummaries([fallbackMember], fallbackLogsForViewer, fallbackPointsForViewer)
     };
   }
 }
@@ -153,13 +191,13 @@ export async function createMember(
 
   if (error) {
     if ("code" in error && error.code === "23505") {
-      throw new Error("同じ隊員名がすでに登録されています。");
+      throw new Error("その隊員名はすでに使われています。");
     }
 
     throw error;
   }
 
-  return mapMemberRow(data);
+  return mapMemberRow(data as ClubMemberRow);
 }
 
 export async function updateOwnAccount(
@@ -171,7 +209,7 @@ export async function updateOwnAccount(
   const nextPasscode = input.passcode?.trim() || "";
 
   if (!nextDisplayName && !nextPasscode) {
-    throw new Error("変更したい項目を入力してください。");
+    throw new Error("変更する項目を入力してください。");
   }
 
   if (nextDisplayName) {
@@ -202,7 +240,7 @@ export async function updateOwnAccount(
     throw error;
   }
 
-  return mapMemberRow(data);
+  return mapMemberRow(data as ClubMemberRow);
 }
 
 export async function adminUpdateMemberRole(
@@ -226,7 +264,7 @@ export async function adminUpdateMemberRole(
     throw error;
   }
 
-  return mapMemberRow(data);
+  return mapMemberRow(data as ClubMemberRow);
 }
 
 export async function adminResetMemberPasscode(targetMemberId: string): Promise<void> {
@@ -254,12 +292,13 @@ export async function adminDeleteMember(actorMemberId: string, targetMemberId: s
   if (target.role === "admin") {
     const adminCount = await countAdmins();
     if (adminCount <= 1) {
-      throw new Error("最後の Admin は削除できません。");
+      throw new Error("最後のAdminは削除できません。");
     }
   }
 
   const supabase = createAdminClient();
   const { error } = await supabase.from("club_members").delete().eq("id", targetMemberId);
+
   if (error) {
     throw error;
   }
@@ -284,7 +323,125 @@ export async function insertObservation(input: ObservationInsertInput, member: M
     throw error;
   }
 
-  return mapLogRow(data);
+  return mapLogRow(data as ObservationRow);
+}
+
+export async function updateObservation(
+  observationId: string,
+  input: ObservationUpdateInput,
+  actor: Member
+): Promise<ObservationLog> {
+  const current = await getObservationById(observationId);
+  if (!current) {
+    throw new Error("観察ログが見つかりません。");
+  }
+
+  ensureOwnOrPrivileged(actor, current.member_id);
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("observation_logs")
+    .update({
+      observed_at: input.observedAt,
+      location: input.location,
+      species: input.species,
+      points: input.points,
+      scoring_memo: input.scoringMemo
+    })
+    .eq("id", observationId)
+    .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapLogRow(data as ObservationRow);
+}
+
+export async function deleteObservation(observationId: string, actor: Member): Promise<void> {
+  const current = await getObservationById(observationId);
+  if (!current) {
+    throw new Error("観察ログが見つかりません。");
+  }
+
+  ensureOwnOrPrivileged(actor, current.member_id);
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("observation_logs").delete().eq("id", observationId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function insertPointEntry(input: PointEntryInput, actor: Member): Promise<PointEntry> {
+  ensureOwnOrPrivileged(actor, input.memberId);
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("point_entries")
+    .insert({
+      member_id: input.memberId,
+      awarded_at: input.awardedAt,
+      title: input.title,
+      description: input.description,
+      points: input.points
+    })
+    .select("id, member_id, awarded_at, title, description, points")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPointEntryRow(data as PointEntryRow);
+}
+
+export async function updatePointEntry(entryId: string, input: PointEntryInput, actor: Member): Promise<PointEntry> {
+  const current = await getPointEntryById(entryId);
+  if (!current) {
+    throw new Error("追加ポイントが見つかりません。");
+  }
+
+  ensureOwnOrPrivileged(actor, current.member_id);
+  ensureOwnOrPrivileged(actor, input.memberId);
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("point_entries")
+    .update({
+      member_id: input.memberId,
+      awarded_at: input.awardedAt,
+      title: input.title,
+      description: input.description,
+      points: input.points
+    })
+    .eq("id", entryId)
+    .select("id, member_id, awarded_at, title, description, points")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPointEntryRow(data as PointEntryRow);
+}
+
+export async function deletePointEntry(entryId: string, actor: Member): Promise<void> {
+  const current = await getPointEntryById(entryId);
+  if (!current) {
+    throw new Error("追加ポイントが見つかりません。");
+  }
+
+  ensureOwnOrPrivileged(actor, current.member_id);
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("point_entries").delete().eq("id", entryId);
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function listExportLogs(
@@ -311,20 +468,26 @@ export async function listExportLogs(
     throw error;
   }
 
-  return (data ?? []).map((row) => mapExportLogRow(row));
+  return (data ?? []).map((row) => mapExportLogRow(row as ObservationRow & { club_members?: { display_name?: string | null }[] | { display_name?: string | null } | null }));
 }
 
 async function buildViewer(member: Member): Promise<LoginResult> {
-  const logs = await getLogsForMember(member.id, member.role);
-  const summaries =
+  const [logs, pointEntries, summaries] = await Promise.all([
+    getLogsForMember(member.id, member.role),
+    getPointEntriesForMember(member.id, member.role),
     member.role === "captain" || member.role === "admin"
-      ? await getAllSummaries()
-      : buildSummaries([member], logs);
+      ? getAllSummaries()
+      : Promise.resolve([] as Awaited<ReturnType<typeof getAllSummaries>>)
+  ]);
 
   return {
     member,
     logs,
-    summaries
+    pointEntries,
+    summaries:
+      member.role === "captain" || member.role === "admin"
+        ? summaries
+        : buildSummaries([member], logs, pointEntries)
   };
 }
 
@@ -340,7 +503,7 @@ async function getMemberById(memberId: string): Promise<Member | null> {
     throw error;
   }
 
-  return data ? mapMemberRow(data) : null;
+  return data ? mapMemberRow(data as ClubMemberRow) : null;
 }
 
 async function getLogsForMember(memberId: string, role: MemberRole): Promise<ObservationLog[]> {
@@ -362,24 +525,88 @@ async function getLogsForMember(memberId: string, role: MemberRole): Promise<Obs
     throw error;
   }
 
-  return (data ?? []).map(mapLogRow);
+  return (data ?? []).map((row) => mapLogRow(row as ObservationRow));
+}
+
+async function getPointEntriesForMember(memberId: string, role: MemberRole): Promise<PointEntry[]> {
+  const supabase = createAdminClient();
+  const query =
+    role === "captain" || role === "admin"
+      ? supabase
+          .from("point_entries")
+          .select("id, member_id, awarded_at, title, description, points")
+          .order("awarded_at", { ascending: false })
+      : supabase
+          .from("point_entries")
+          .select("id, member_id, awarded_at, title, description, points")
+          .eq("member_id", memberId)
+          .order("awarded_at", { ascending: false });
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => mapPointEntryRow(row as PointEntryRow));
 }
 
 async function getAllSummaries() {
   const supabase = createAdminClient();
-  const [{ data: memberRows, error: memberError }, { data: logRows, error: logError }] = await Promise.all([
+  const [
+    { data: memberRows, error: memberError },
+    { data: logRows, error: logError },
+    { data: pointRows, error: pointError }
+  ] = await Promise.all([
     supabase.from("club_members").select("id, display_name, role").order("created_at", { ascending: true }),
     supabase
       .from("observation_logs")
       .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
-      .order("observed_at", { ascending: false })
+      .order("observed_at", { ascending: false }),
+    supabase
+      .from("point_entries")
+      .select("id, member_id, awarded_at, title, description, points")
+      .order("awarded_at", { ascending: false })
   ]);
 
-  if (memberError || logError) {
-    throw memberError || logError;
+  if (memberError || logError || pointError) {
+    throw memberError || logError || pointError;
   }
 
-  return buildSummaries((memberRows ?? []).map(mapMemberRow), (logRows ?? []).map(mapLogRow));
+  return buildSummaries(
+    (memberRows ?? []).map((row) => mapMemberRow(row as ClubMemberRow)),
+    (logRows ?? []).map((row) => mapLogRow(row as ObservationRow)),
+    (pointRows ?? []).map((row) => mapPointEntryRow(row as PointEntryRow))
+  );
+}
+
+async function getObservationById(observationId: string): Promise<ObservationRow | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("observation_logs")
+    .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+    .eq("id", observationId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as ObservationRow | null) ?? null;
+}
+
+async function getPointEntryById(entryId: string): Promise<PointEntryRow | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("point_entries")
+    .select("id, member_id, awarded_at, title, description, points")
+    .eq("id", entryId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as PointEntryRow | null) ?? null;
 }
 
 async function countAdmins() {
@@ -396,7 +623,14 @@ async function countAdmins() {
   return count ?? 0;
 }
 
-function mapMemberRow(row: { id: string; display_name: string; role: MemberRole }): Member {
+function ensureOwnOrPrivileged(actor: Member, ownerMemberId: string) {
+  const canManageAll = actor.role === "captain" || actor.role === "admin";
+  if (!canManageAll && actor.id !== ownerMemberId) {
+    throw new Error("自分以外のデータは操作できません。");
+  }
+}
+
+function mapMemberRow(row: ClubMemberRow): Member {
   return {
     id: row.id,
     displayName: row.display_name,
@@ -404,17 +638,7 @@ function mapMemberRow(row: { id: string; display_name: string; role: MemberRole 
   };
 }
 
-function mapLogRow(row: {
-  id: string;
-  member_id: string;
-  observed_at: string;
-  location: string;
-  species: string;
-  points: number;
-  scoring_memo: string;
-  image_path?: string | null;
-  guide_pdf_path?: string | null;
-}): ObservationLog {
+function mapLogRow(row: ObservationRow): ObservationLog {
   return {
     id: row.id,
     memberId: row.member_id,
@@ -428,18 +652,22 @@ function mapLogRow(row: {
   };
 }
 
-function mapExportLogRow(row: {
-  id: string;
-  member_id: string;
-  observed_at: string;
-  location: string;
-  species: string;
-  points: number;
-  scoring_memo: string;
-  image_path?: string | null;
-  guide_pdf_path?: string | null;
-  club_members?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
-}): ObservationExportLog {
+function mapPointEntryRow(row: PointEntryRow): PointEntry {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    awardedAt: row.awarded_at,
+    title: row.title,
+    description: row.description,
+    points: row.points
+  };
+}
+
+function mapExportLogRow(
+  row: ObservationRow & {
+    club_members?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
+  }
+): ObservationExportLog {
   const memberRow = Array.isArray(row.club_members) ? row.club_members[0] : row.club_members;
 
   return {

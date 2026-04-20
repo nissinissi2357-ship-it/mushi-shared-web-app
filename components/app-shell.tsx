@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { parseCaptainMessage } from "@/lib/line-parser";
@@ -11,13 +11,15 @@ import type {
   MemberRole,
   MemberSummary,
   ObservationLog,
+  PointEntry,
   TabId
 } from "@/lib/types";
 
 const tabs: Array<{ id: TabId; label: string }> = [
   { id: "home", label: "ホーム" },
   { id: "record", label: "観察登録" },
-  { id: "logs", label: "観察ログ" }
+  { id: "logs", label: "観察ログ" },
+  { id: "points", label: "追加ポイント" }
 ];
 
 type AppShellProps = {
@@ -35,6 +37,14 @@ type DraftObservation = {
   scoringMemo: string;
 };
 
+type DraftPointEntry = {
+  memberId: string;
+  awardedAt: string;
+  title: string;
+  description: string;
+  points: string;
+};
+
 type RegisterDraft = {
   displayName: string;
   passcode: string;
@@ -46,13 +56,27 @@ type AdminCreateDraft = {
   role: MemberRole;
 };
 
-function getDefaultDraft(): DraftObservation {
+function toLocalInputValue(date = new Date()) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function getDefaultObservationDraft(): DraftObservation {
   return {
-    observedAt: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+    observedAt: toLocalInputValue(),
     location: "",
     species: "",
     points: "",
     scoringMemo: ""
+  };
+}
+
+function getDefaultPointEntryDraft(memberId = ""): DraftPointEntry {
+  return {
+    memberId,
+    awardedAt: toLocalInputValue(),
+    title: "",
+    description: "",
+    points: ""
   };
 }
 
@@ -61,7 +85,7 @@ function buildRoleDrafts(members: Member[]) {
 }
 
 const defaultParseStatus =
-  "隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。";
+  "隊長メッセージを貼ると、日時・場所・種名・ポイントを自動で読み取ります。";
 
 export function AppShell({ initialMembers, source, warning, initialViewer }: AppShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
@@ -70,11 +94,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [loginPasscode, setLoginPasscode] = useState("");
   const [currentMember, setCurrentMember] = useState<Member | null>(initialViewer?.member ?? null);
   const [logs, setLogs] = useState<ObservationLog[]>(initialViewer?.logs ?? []);
+  const [pointEntries, setPointEntries] = useState<PointEntry[]>(initialViewer?.pointEntries ?? []);
   const [summaries, setSummaries] = useState<MemberSummary[]>(initialViewer?.summaries ?? []);
   const [draftPhotoMessage, setDraftPhotoMessage] = useState(
-    "写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。"
+    "写真は長辺1600px、JPEG品質0.75を目安に自動で軽くします。"
   );
-  const [draft, setDraft] = useState<DraftObservation>(getDefaultDraft);
+  const [draft, setDraft] = useState<DraftObservation>(getDefaultObservationDraft);
+  const [pointDraft, setPointDraft] = useState<DraftPointEntry>(
+    getDefaultPointEntryDraft(initialViewer?.member.id ?? initialMembers[0]?.id ?? "")
+  );
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editingLogDraft, setEditingLogDraft] = useState<DraftObservation>(getDefaultObservationDraft);
+  const [editingPointEntryId, setEditingPointEntryId] = useState<string | null>(null);
   const [linePaste, setLinePaste] = useState("");
   const [parseStatus, setParseStatus] = useState(defaultParseStatus);
   const [registerDraft, setRegisterDraft] = useState<RegisterDraft>({ displayName: "", passcode: "" });
@@ -88,26 +119,55 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [adminRoleDrafts, setAdminRoleDrafts] = useState<Record<string, MemberRole>>(buildRoleDrafts(initialMembers));
   const [statusMessage, setStatusMessage] = useState<string | null>(warning);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPointSaving, setIsPointSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isAccountSaving, setIsAccountSaving] = useState(false);
   const [isAdminSaving, setIsAdminSaving] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
+  const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
-  const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id);
+  const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
   const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
   const isAdmin = currentMember?.role === "admin";
-  const filteredLogs =
-    canViewRanking && logMemberFilterId
-      ? logs.filter((log) => log.memberId === logMemberFilterId)
-      : logs;
+
+  const filteredLogs = useMemo(() => {
+    if (!canViewRanking || !logMemberFilterId) {
+      return logs;
+    }
+
+    return logs.filter((log) => log.memberId === logMemberFilterId);
+  }, [canViewRanking, logMemberFilterId, logs]);
+
   const filteredLogMemberName =
     canViewRanking && logMemberFilterId
       ? members.find((member) => member.id === logMemberFilterId)?.displayName || null
       : null;
+
+  const filteredPointEntries = useMemo(() => {
+    if (!canViewRanking || !pointMemberFilterId) {
+      return pointEntries;
+    }
+
+    return pointEntries.filter((entry) => entry.memberId === pointMemberFilterId);
+  }, [canViewRanking, pointEntries, pointMemberFilterId]);
+
+  const filteredPointMemberName =
+    canViewRanking && pointMemberFilterId
+      ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
+      : null;
+
+  useEffect(() => {
+    if (currentMember && !editingPointEntryId) {
+      setPointDraft((current) => ({
+        ...current,
+        memberId: current.memberId || currentMember.id
+      }));
+    }
+  }, [currentMember, editingPointEntryId]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -118,18 +178,28 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setLogMemberFilterId((current) =>
       current && nextMembers.some((member) => member.id === current) ? current : null
     );
+    setPointMemberFilterId((current) =>
+      current && nextMembers.some((member) => member.id === current) ? current : null
+    );
   }
 
   function applyViewerPayload(payload: LoginResult) {
     setCurrentMember(payload.member);
     setSelectedMemberId(payload.member.id);
     setLogs(payload.logs);
+    setPointEntries(payload.pointEntries);
     setSummaries(payload.summaries);
     setAccountDisplayName(payload.member.displayName);
     setAccountPasscode("");
+    setPointDraft((current) => ({
+      ...current,
+      memberId:
+        canViewRanking && pointMemberFilterId ? pointMemberFilterId : current.memberId || payload.member.id
+    }));
 
     if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
       setLogMemberFilterId(null);
+      setPointMemberFilterId(null);
     }
   }
 
@@ -219,14 +289,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   async function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
-      setDraftPhotoMessage("写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。");
+      setDraftPhotoMessage("写真は長辺1600px、JPEG品質0.75を目安に自動で軽くします。");
       return;
     }
 
     const resized = await resizeImageBeforeUpload(file);
     const beforeKb = Math.round(file.size / 1024);
     const afterKb = Math.round(resized.size / 1024);
-    setDraftPhotoMessage(`${file.name} を圧縮予定です。${beforeKb}KB → ${afterKb}KB`);
+    setDraftPhotoMessage(`${file.name} を軽量化しました: ${beforeKb}KB → ${afterKb}KB`);
   }
 
   function applyParsedToDraft(rawText: string) {
@@ -247,12 +317,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       parsed.observedAt ? `日時: ${parsed.observedAt}` : ""
     ].filter(Boolean);
 
-    if (found.length === 0) {
-      setParseStatus("読み取れる項目が見つかりませんでした。本文を少し長めに貼ると精度が上がります。");
-    } else {
-      setParseStatus(`自動入力しました。${found.join(" / ")}`);
-    }
-
+    setParseStatus(found.length === 0 ? "読み取れた項目がありませんでした。" : `自動入力しました。${found.join(" / ")}`);
     return parsed;
   }
 
@@ -300,12 +365,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     } finally {
       setCurrentMember(null);
       setLogs([]);
+      setPointEntries([]);
       setSummaries([]);
       setLogMemberFilterId(null);
+      setPointMemberFilterId(null);
       setLoginPasscode("");
       setAccountDisplayName("");
       setAccountPasscode("");
       setIsAuthPanelOpen(false);
+      setEditingLogId(null);
+      setEditingPointEntryId(null);
       setStatusMessage("ログアウトしました。");
     }
   }
@@ -367,7 +436,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       }
 
       await refreshEverything();
-      setStatusMessage("名前と合言葉を更新しました。");
+      setStatusMessage("表示名と合言葉を更新しました。");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "アカウント更新に失敗しました。");
     } finally {
@@ -391,14 +460,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
       const payload = (await response.json()) as { member?: Member; error?: string };
       if (!response.ok || !payload.member) {
-        throw new Error(payload.error || "Admin アカウント作成に失敗しました。");
+        throw new Error(payload.error || "Admin操作に失敗しました。");
       }
 
       await refreshEverything();
       setAdminCreateDraft({ displayName: "", passcode: "", role: "member" });
-      setStatusMessage(`${payload.member.displayName} さんのアカウントを作成しました。`);
+      setStatusMessage(`${payload.member.displayName} さんを追加しました。`);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Admin アカウント作成に失敗しました。");
+      setStatusMessage(error instanceof Error ? error.message : "Admin操作に失敗しました。");
     } finally {
       setIsAdminSaving(false);
     }
@@ -420,7 +489,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         })
       });
 
-      const payload = (await response.json()) as { member?: Member; error?: string };
+      const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
         throw new Error(payload.error || "権限更新に失敗しました。");
       }
@@ -451,13 +520,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
-        throw new Error(payload.error || "合言葉リセットに失敗しました。");
+        throw new Error(payload.error || "合言葉のリセットに失敗しました。");
       }
 
       await refreshEverything();
       setStatusMessage("合言葉を 0000 にリセットしました。");
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "合言葉リセットに失敗しました。");
+      setStatusMessage(error instanceof Error ? error.message : "合言葉のリセットに失敗しました。");
     } finally {
       setIsAdminSaving(false);
     }
@@ -512,7 +581,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     }
 
     await refreshViewerState();
-    setDraft(getDefaultDraft());
+    setDraft(getDefaultObservationDraft());
     setLinePaste("");
     setParseStatus(defaultParseStatus);
     setStatusMessage("観察ログを保存しました。");
@@ -546,7 +615,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     const rawText = linePaste.trim();
     if (!rawText) {
-      setParseStatus("まず隊長メッセージを貼り付けてください。");
+      setParseStatus("まずは隊長メッセージを貼り付けてください。");
       return;
     }
 
@@ -566,7 +635,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     ].filter(Boolean);
 
     if (missing.length > 0) {
-      setParseStatus(`まだ ${missing.join("・")} が足りません。必要なところだけ手入力してください。`);
+      setParseStatus(`まだ ${missing.join("・")} が足りません。必要ならそのまま手入力してください。`);
       return;
     }
 
@@ -582,55 +651,213 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     }
   }
 
+  function startEditingLog(log: ObservationLog) {
+    setEditingLogId(log.id);
+    setEditingLogDraft({
+      observedAt: toLocalInputValue(new Date(log.observedAt)),
+      location: log.location,
+      species: log.species,
+      points: String(log.points),
+      scoringMemo: log.scoringMemo
+    });
+  }
+
+  async function handleUpdateLog(logId: string) {
+    setIsSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/observations/${logId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          observedAt: new Date(editingLogDraft.observedAt).toISOString(),
+          location: editingLogDraft.location,
+          species: editingLogDraft.species,
+          points: Number(editingLogDraft.points),
+          scoringMemo: editingLogDraft.scoringMemo
+        })
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "観察ログの更新に失敗しました。");
+      }
+
+      await refreshViewerState();
+      setEditingLogId(null);
+      setStatusMessage("観察ログを更新しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "観察ログの更新に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteLog(log: ObservationLog) {
+    const confirmed = window.confirm(`${log.species} の観察ログを削除しますか？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/observations/${log.id}`, {
+        method: "DELETE"
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "観察ログの削除に失敗しました。");
+      }
+
+      await refreshViewerState();
+      setEditingLogId(null);
+      setStatusMessage("観察ログを削除しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "観察ログの削除に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function startEditingPointEntry(entry: PointEntry) {
+    setEditingPointEntryId(entry.id);
+    setPointDraft({
+      memberId: entry.memberId,
+      awardedAt: toLocalInputValue(new Date(entry.awardedAt)),
+      title: entry.title,
+      description: entry.description,
+      points: String(entry.points)
+    });
+    setActiveTab("points");
+  }
+
+  function resetPointDraft() {
+    setEditingPointEntryId(null);
+    setPointDraft(getDefaultPointEntryDraft(currentMember?.id ?? members[0]?.id ?? ""));
+  }
+
+  async function handlePointSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentMember) {
+      setStatusMessage("先にログインしてください。");
+      return;
+    }
+
+    setIsPointSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(
+        editingPointEntryId ? `/api/point-entries/${editingPointEntryId}` : "/api/point-entries",
+        {
+          method: editingPointEntryId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            memberId: pointDraft.memberId || currentMember.id,
+            awardedAt: new Date(pointDraft.awardedAt).toISOString(),
+            title: pointDraft.title,
+            description: pointDraft.description,
+            points: Number(pointDraft.points)
+          })
+        }
+      );
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "追加ポイントの保存に失敗しました。");
+      }
+
+      await refreshViewerState();
+      setStatusMessage(editingPointEntryId ? "追加ポイントを更新しました。" : "追加ポイントを保存しました。");
+      resetPointDraft();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "追加ポイントの保存に失敗しました。");
+    } finally {
+      setIsPointSaving(false);
+    }
+  }
+
+  async function handleDeletePointEntry(entry: PointEntry) {
+    const confirmed = window.confirm(`${entry.title} を削除しますか？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsPointSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/point-entries/${entry.id}`, {
+        method: "DELETE"
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "追加ポイントの削除に失敗しました。");
+      }
+
+      await refreshViewerState();
+      if (editingPointEntryId === entry.id) {
+        resetPointDraft();
+      }
+      setStatusMessage("追加ポイントを削除しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "追加ポイントの削除に失敗しました。");
+    } finally {
+      setIsPointSaving(false);
+    }
+  }
+
+  function canManageMemberData(memberId: string) {
+    if (!currentMember) {
+      return false;
+    }
+
+    return currentMember.role === "captain" || currentMember.role === "admin" || currentMember.id === memberId;
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
         <div className="hero-top">
           <div>
             <p className="eyebrow">Shared Edition</p>
-            <h1>ムシムシ探検隊ログ</h1>
+            <h1>ムシムシ探検隊</h1>
+            <p className="helper-text">
+              隊員ごとの観察ログ、追加ポイント、ランキングをひとつの画面で管理できます。
+            </p>
           </div>
 
           <div className="auth-buttons">
+            <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
+              {currentMember ? `${currentMember.displayName}` : "ログイン"}
+            </button>
             {currentMember ? (
-              <>
-                <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
-                  {currentMember.displayName}
-                </button>
-                <button type="button" className="ghost-button" onClick={handleLogout}>
-                  ログアウト
-                </button>
-              </>
-            ) : (
-              <button type="button" className="primary-button" onClick={() => setIsAuthPanelOpen(true)}>
-                ログイン
+              <button type="button" className="ghost-button" onClick={handleLogout}>
+                ログアウト
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
-        <p className="hero-copy">
-          ログインした隊員だけが自分のホームと観察ログを見られる共有版です。
-        </p>
         {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
 
-        <div className="hero-stats">
-          <StatCard label="あなたのポイント" value={`${currentSummary?.totalPoints ?? 0}P`} />
-          <StatCard label="登録件数" value={`${currentSummary?.recordCount ?? 0}件`} />
-          <StatCard label="最新観察" value={formatDateTime(currentSummary?.latestObservedAt ?? null)} />
-          <StatCard
-            label="権限"
-            value={
-              currentMember?.role === "captain"
-                ? "隊長"
-                : currentMember?.role === "admin"
-                  ? "Admin"
-                  : currentMember
-                    ? "隊員"
-                    : "未ログイン"
-            }
-          />
-        </div>
+        {currentMember && currentSummary ? (
+          <div className="hero-stats">
+            <StatCard label="合計ポイント" value={`${currentSummary.totalPoints}P`} />
+            <StatCard label="観察ポイント" value={`${currentSummary.observationPoints}P`} />
+            <StatCard label="追加ポイント" value={`${currentSummary.extraPoints}P`} />
+            <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
+          </div>
+        ) : null}
       </header>
 
       {isAuthPanelOpen ? (
@@ -638,7 +865,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           <section className="session-panel auth-panel" onClick={(event) => event.stopPropagation()}>
             <div className="auth-panel-head">
               <div>
-                <p className="section-label">Auth</p>
+                <p className="section-label">Account</p>
                 <h2>{currentMember ? "アカウント設定" : "ログイン"}</h2>
               </div>
               <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
@@ -682,7 +909,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onClick={handleLogin}
                     disabled={isLoggingIn || !selectedMember}
                   >
-                    {isLoggingIn ? "確認中..." : "ログイン"}
+                    {isLoggingIn ? "ログイン中..." : "ログイン"}
                   </button>
                 </div>
               </div>
@@ -713,7 +940,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                 <div className="session-actions">
                   <button type="submit" className="secondary-button" disabled={isRegistering}>
-                    {isRegistering ? "登録中..." : "隊員を登録"}
+                    {isRegistering ? "登録中..." : "隊員を追加"}
                   </button>
                 </div>
               </form>
@@ -744,7 +971,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                   <div className="session-actions">
                     <button type="submit" className="secondary-button" disabled={isAccountSaving}>
-                      {isAccountSaving ? "更新中..." : "名前と合言葉を変更"}
+                      {isAccountSaving ? "更新中..." : "表示名と合言葉を更新"}
                     </button>
                   </div>
                 </form>
@@ -889,9 +1116,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </div>
               </div>
 
+              {currentSummary ? (
+                <div className="hero-stats">
+                  <StatCard label="合計ポイント" value={`${currentSummary.totalPoints}P`} />
+                  <StatCard label="観察ポイント" value={`${currentSummary.observationPoints}P`} />
+                  <StatCard label="追加ポイント" value={`${currentSummary.extraPoints}P`} />
+                  <StatCard label="追加回数" value={`${currentSummary.pointEntryCount}件`} />
+                </div>
+              ) : null}
+
               <div className="home-copy">
-                <p>ログイン中の隊員の集計だけを表示しています。</p>
-                <p>ランキングは隊長と Admin だけが見える仕様です。</p>
+                <p>自分の集計や最近の状況をここで確認できます。</p>
+                <p>ランキングは隊長と Admin だけが見られます。</p>
               </div>
 
               {canViewRanking ? (
@@ -910,7 +1146,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                       <div>
                         <p className="ranking-name">{summary.displayName}</p>
                         <p className="ranking-meta">
-                          {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / {summary.recordCount}件
+                          {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
+                          {summary.recordCount}件 / 追加{summary.pointEntryCount}件
                         </p>
                       </div>
                       <div className="ranking-points">{summary.totalPoints}P</div>
@@ -918,7 +1155,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   ))}
                 </div>
               ) : (
-                <p className="helper-text">ランキングは隊長または Admin だけが見えます。</p>
+                <p className="helper-text">ランキングは隊長またはAdminだけが見られます。</p>
               )}
             </section>
           ) : null}
@@ -950,7 +1187,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onClick={() => {
                       const rawText = linePaste.trim();
                       if (!rawText) {
-                        setParseStatus("まず隊長メッセージを貼り付けてください。");
+                        setParseStatus("まずは隊長メッセージを貼り付けてください。");
                         return;
                       }
                       applyParsedToDraft(rawText);
@@ -1014,7 +1251,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   隊長メモ
                   <textarea
                     rows={4}
-                    placeholder="例: 呉市1年ぶり、旧呉市初、呉市🟪、広島県🟪…8P"
+                    placeholder="例: 呉市1年ぶり、旧呉市初、呉市、広島県 8P"
                     value={draft.scoringMemo}
                     onChange={(event) => setDraft((current) => ({ ...current, scoringMemo: event.target.value }))}
                   />
@@ -1030,7 +1267,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   図鑑PDF
                   <input type="file" accept="application/pdf" disabled />
                 </label>
-                <p className="helper-text">写真とPDFの共有保存は次の段階でつなぎます。</p>
+                <p className="helper-text">写真とPDFの共有保存は次の段階で対応予定です。</p>
 
                 <div className="form-actions full-width">
                   <button type="submit" className="primary-button" disabled={isSaving}>
@@ -1040,7 +1277,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     type="button"
                     className="secondary-button"
                     onClick={() => {
-                      setDraft(getDefaultDraft());
+                      setDraft(getDefaultObservationDraft());
                       setLinePaste("");
                       setParseStatus(defaultParseStatus);
                     }}
@@ -1059,16 +1296,171 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Logs</p>
                   <h2>観察ログ</h2>
-                  {filteredLogMemberName ? (
-                    <p className="helper-text">{filteredLogMemberName} さんの観察ログを表示中です。</p>
-                  ) : null}
+                  {filteredLogMemberName ? <p className="helper-text">{filteredLogMemberName} さんのログを表示中です。</p> : null}
                 </div>
+
+                <div className="toolbar-row">
+                  {canViewRanking ? (
+                    <label>
+                      隊員で絞り込み
+                      <select
+                        value={logMemberFilterId ?? ""}
+                        onChange={(event) => setLogMemberFilterId(event.target.value || null)}
+                      >
+                        <option value="">全員</option>
+                        {members.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleExportLogs}
+                    disabled={isExporting || filteredLogs.length === 0}
+                  >
+                    {isExporting ? "Excel出力中..." : "Excel出力"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="record-list">
+                {filteredLogs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
+                {filteredLogs.map((log) => {
+                  const memberName = members.find((member) => member.id === log.memberId)?.displayName || "不明";
+                  const canManage = canManageMemberData(log.memberId);
+
+                  return (
+                    <article key={log.id} className="record-card">
+                      {editingLogId === log.id ? (
+                        <div className="editor-grid">
+                          <label>
+                            観察日時
+                            <input
+                              type="datetime-local"
+                              value={editingLogDraft.observedAt}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, observedAt: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            場所
+                            <input
+                              type="text"
+                              value={editingLogDraft.location}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, location: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            種名
+                            <input
+                              type="text"
+                              value={editingLogDraft.species}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, species: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            ポイント
+                            <input
+                              type="number"
+                              value={editingLogDraft.points}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, points: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label className="full-width">
+                            隊長メモ
+                            <textarea
+                              rows={4}
+                              value={editingLogDraft.scoringMemo}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, scoringMemo: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <div className="form-actions full-width">
+                            <button type="button" className="primary-button" onClick={() => handleUpdateLog(log.id)}>
+                              更新する
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => setEditingLogId(null)}
+                            >
+                              キャンセル
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="record-top">
+                            <div>
+                              <p className="record-meta">{formatDateTime(log.observedAt)}</p>
+                              {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
+                              <h3 className="record-species">{log.species}</h3>
+                            </div>
+                            <div className="point-badge">{log.points}P</div>
+                          </div>
+
+                          <p className="record-location">{log.location}</p>
+                          <p className="record-memo">{log.scoringMemo || "メモなし"}</p>
+
+                          <div className="record-assets">
+                            {log.imageUrl ? (
+                              <div className="photo-thumbnail">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={log.imageUrl} alt={log.species} />
+                                <span className="photo-thumbnail-label">写真あり</span>
+                              </div>
+                            ) : null}
+
+                            {log.guidePdfUrl ? <span className="asset-label">PDFあり</span> : null}
+                          </div>
+
+                          {canManage ? (
+                            <div className="inline-actions">
+                              <button type="button" className="secondary-button" onClick={() => startEditingLog(log)}>
+                                編集
+                              </button>
+                              <button type="button" className="ghost-button" onClick={() => handleDeleteLog(log)}>
+                                削除
+                              </button>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "points" ? (
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-label">Points</p>
+                  <h2>追加ポイント</h2>
+                  {filteredPointMemberName ? <p className="helper-text">{filteredPointMemberName} さんの追加ポイントを表示中です。</p> : null}
+                </div>
+
                 {canViewRanking ? (
                   <label>
                     隊員で絞り込み
                     <select
-                      value={logMemberFilterId ?? ""}
-                      onChange={(event) => setLogMemberFilterId(event.target.value || null)}
+                      value={pointMemberFilterId ?? ""}
+                      onChange={(event) => setPointMemberFilterId(event.target.value || null)}
                     >
                       <option value="">全員</option>
                       {members.map((member) => (
@@ -1081,30 +1473,111 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 ) : null}
               </div>
 
-              <div className="logs-export-bar">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={handleExportLogs}
-                  disabled={isExporting || filteredLogs.length === 0}
-                >
-                  {isExporting ? "Excel出力中..." : "Excel出力"}
-                </button>
-              </div>
+              <form className="record-form" onSubmit={handlePointSubmit}>
+                <label>
+                  日時
+                  <input
+                    type="datetime-local"
+                    value={pointDraft.awardedAt}
+                    onChange={(event) => setPointDraft((current) => ({ ...current, awardedAt: event.target.value }))}
+                    required
+                  />
+                </label>
+
+                <label>
+                  対象隊員
+                  <select
+                    value={pointDraft.memberId || currentMember.id}
+                    onChange={(event) => setPointDraft((current) => ({ ...current, memberId: event.target.value }))}
+                    disabled={!canViewRanking}
+                  >
+                    {(canViewRanking ? members : [currentMember]).map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  項目名
+                  <input
+                    type="text"
+                    placeholder="例: 誤同定の指摘"
+                    value={pointDraft.title}
+                    onChange={(event) => setPointDraft((current) => ({ ...current, title: event.target.value }))}
+                    required
+                  />
+                </label>
+
+                <label>
+                  ポイント
+                  <input
+                    type="number"
+                    step="1"
+                    placeholder="例: 2"
+                    value={pointDraft.points}
+                    onChange={(event) => setPointDraft((current) => ({ ...current, points: event.target.value }))}
+                    required
+                  />
+                </label>
+
+                <label className="full-width">
+                  説明
+                  <textarea
+                    rows={3}
+                    placeholder="例: 同定の修正提案が採用された"
+                    value={pointDraft.description}
+                    onChange={(event) => setPointDraft((current) => ({ ...current, description: event.target.value }))}
+                  />
+                </label>
+
+                <div className="form-actions full-width">
+                  <button type="submit" className="primary-button" disabled={isPointSaving}>
+                    {isPointSaving ? "保存中..." : editingPointEntryId ? "更新する" : "追加する"}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={resetPointDraft} disabled={isPointSaving}>
+                    クリア
+                  </button>
+                </div>
+              </form>
 
               <div className="record-list">
-                {filteredLogs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
-                {filteredLogs.map((log) => (
-                  <LogCard
-                    key={log.id}
-                    log={log}
-                    memberName={
-                      canViewRanking
-                        ? members.find((member) => member.id === log.memberId)?.displayName || "不明"
-                        : null
-                    }
-                  />
-                ))}
+                {filteredPointEntries.length === 0 ? <p className="helper-text">まだ追加ポイントはありません。</p> : null}
+                {filteredPointEntries.map((entry) => {
+                  const memberName = members.find((member) => member.id === entry.memberId)?.displayName || "不明";
+                  const canManage = canManageMemberData(entry.memberId);
+
+                  return (
+                    <article key={entry.id} className="record-card">
+                      <div className="record-top">
+                        <div>
+                          <p className="record-meta">{formatDateTime(entry.awardedAt)}</p>
+                          {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
+                          <h3 className="record-species">{entry.title}</h3>
+                        </div>
+                        <div className="point-badge">{entry.points}P</div>
+                      </div>
+
+                      <p className="record-memo">{entry.description || "説明なし"}</p>
+
+                      {canManage ? (
+                        <div className="inline-actions">
+                          <button type="button" className="secondary-button" onClick={() => startEditingPointEntry(entry)}>
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => handleDeletePointEntry(entry)}
+                          >
+                            削除
+                          </button>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
             </section>
           ) : null}
@@ -1118,7 +1591,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             </div>
           </div>
           <p className="helper-text">
-            右上のログインボタンから入ると、ホーム・観察登録・観察ログが使えるようになります。
+            右上のログインボタンから入ると、ホーム・観察登録・観察ログ・追加ポイントが使えるようになります。
           </p>
         </section>
       )}
@@ -1131,36 +1604,6 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <article className="summary-card">
       <span>{label}</span>
       <strong>{value}</strong>
-    </article>
-  );
-}
-
-function LogCard({ log, memberName }: { log: ObservationLog; memberName?: string | null }) {
-  return (
-    <article className="record-card">
-      <div className="record-top">
-        <div>
-          <p className="record-meta">{formatDateTime(log.observedAt)}</p>
-          {memberName ? <p className="record-meta">{memberName}</p> : null}
-          <h3 className="record-species">{log.species}</h3>
-        </div>
-        <div className="point-badge">{log.points}P</div>
-      </div>
-
-      <p className="record-location">{log.location}</p>
-      <p className="record-memo">{log.scoringMemo || "メモなし"}</p>
-
-      <div className="record-assets">
-        {log.imageUrl ? (
-          <div className="photo-thumbnail">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={log.imageUrl} alt={log.species} />
-            <span className="photo-thumbnail-label">写真あり</span>
-          </div>
-        ) : null}
-
-        {log.guidePdfUrl ? <span className="asset-label">PDFあり</span> : null}
-      </div>
     </article>
   );
 }

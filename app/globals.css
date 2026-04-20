@@ -268,6 +268,24 @@ select {
   margin-bottom: 14px;
 }
 
+.toolbar-row,
+.inline-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.inline-actions {
+  margin-top: 16px;
+}
+
+.editor-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .ranking-item,
 .record-card,
 .admin-member-card {
@@ -405,7 +423,8 @@ select:disabled {
   .session-grid,
   .registration-box,
   .account-form,
-  .admin-create-form {
+  .admin-create-form,
+  .editor-grid {
     grid-template-columns: 1fr;
   }
 
@@ -415,5 +434,11 @@ select:disabled {
 
   .logs-export-bar {
     justify-content: stretch;
+  }
+
+  .toolbar-row,
+  .inline-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

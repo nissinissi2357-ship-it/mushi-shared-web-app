@@ -23,16 +23,28 @@ export type ObservationExportLog = ObservationLog & {
   memberDisplayName: string;
 };
 
+export type PointEntry = {
+  id: string;
+  memberId: string;
+  awardedAt: string;
+  title: string;
+  description: string;
+  points: number;
+};
+
 export type MemberSummary = {
   memberId: string;
   displayName: string;
   role: MemberRole;
   totalPoints: number;
+  observationPoints: number;
+  extraPoints: number;
   recordCount: number;
+  pointEntryCount: number;
   latestObservedAt: string | null;
 };
 
-export type TabId = "home" | "record" | "logs";
+export type TabId = "home" | "record" | "logs" | "points";
 
 export type ObservationInsertInput = {
   observedAt: string;
@@ -42,9 +54,20 @@ export type ObservationInsertInput = {
   scoringMemo: string;
 };
 
+export type ObservationUpdateInput = ObservationInsertInput;
+
+export type PointEntryInput = {
+  memberId: string;
+  awardedAt: string;
+  title: string;
+  description: string;
+  points: number;
+};
+
 export type LoginResult = {
   member: Member;
   logs: ObservationLog[];
+  pointEntries: PointEntry[];
   summaries: MemberSummary[];
 };
 
