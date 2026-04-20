@@ -20,9 +20,16 @@ export async function PATCH(
     const species = String(body.species || "").trim();
     const scoringMemo = String(body.scoringMemo || "").trim();
     const points = Number(body.points);
+    const latitude = body.latitude === null || body.latitude === undefined || body.latitude === "" ? null : Number(body.latitude);
+    const longitude =
+      body.longitude === null || body.longitude === undefined || body.longitude === "" ? null : Number(body.longitude);
 
     if (!observedAt || !location || !species || Number.isNaN(points)) {
       return NextResponse.json({ error: "必須項目を入力してください。" }, { status: 400 });
+    }
+
+    if ((latitude !== null && Number.isNaN(latitude)) || (longitude !== null && Number.isNaN(longitude))) {
+      return NextResponse.json({ error: "地図の座標が正しくありません。" }, { status: 400 });
     }
 
     const updated = await updateObservation(
@@ -30,6 +37,8 @@ export async function PATCH(
       {
         observedAt,
         location,
+        latitude,
+        longitude,
         species,
         points,
         scoringMemo

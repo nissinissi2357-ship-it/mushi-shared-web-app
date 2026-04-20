@@ -367,6 +367,72 @@ select {
   align-items: end;
 }
 
+.map-field {
+  margin-top: -2px;
+}
+
+.coordinate-picker {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.coordinate-picker-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+}
+
+.coordinate-picker-head strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.map-controls,
+.coordinate-inputs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.coordinate-inputs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.map-canvas {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 18px;
+  cursor: crosshair;
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.map-tile {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.map-marker {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #d98b2b;
+  border: 3px solid #fffaf0;
+  box-shadow: 0 6px 16px rgba(61, 51, 30, 0.28);
+  transform: translate(-50%, -50%);
+}
+
 .inline-actions {
   margin-top: 16px;
 }
@@ -537,5 +603,11 @@ select:disabled {
   .trend-head {
     align-items: start;
     flex-direction: column;
+  }
+
+  .coordinate-picker-head,
+  .map-controls,
+  .coordinate-inputs {
+    grid-template-columns: 1fr;
   }
 }

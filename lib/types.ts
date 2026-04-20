@@ -12,6 +12,8 @@ export type ObservationLog = {
   memberId: string;
   observedAt: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
   species: string;
   points: number;
   scoringMemo: string;
@@ -49,6 +51,8 @@ export type TabId = "home" | "record" | "logs" | "points";
 export type ObservationInsertInput = {
   observedAt: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
   species: string;
   points: number;
   scoringMemo: string;

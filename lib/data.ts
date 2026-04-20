@@ -36,6 +36,8 @@ type ObservationRow = {
   member_id: string;
   observed_at: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
   species: string;
   points: number;
   scoring_memo: string;
@@ -312,11 +314,13 @@ export async function insertObservation(input: ObservationInsertInput, member: M
       member_id: member.id,
       observed_at: input.observedAt,
       location: input.location,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
       species: input.species,
       points: input.points,
       scoring_memo: input.scoringMemo
     })
-    .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .single();
 
   if (error) {
@@ -344,12 +348,14 @@ export async function updateObservation(
     .update({
       observed_at: input.observedAt,
       location: input.location,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
       species: input.species,
       points: input.points,
       scoring_memo: input.scoringMemo
     })
     .eq("id", observationId)
-    .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .single();
 
   if (error) {
@@ -455,7 +461,7 @@ export async function listExportLogs(
   let query = supabase
     .from("observation_logs")
     .select(
-      "id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path, club_members!inner(display_name)"
+      "id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path, club_members!inner(display_name)"
     )
     .order("observed_at", { ascending: false });
 
@@ -512,11 +518,11 @@ async function getLogsForMember(memberId: string, role: MemberRole): Promise<Obs
     role === "captain" || role === "admin"
       ? supabase
           .from("observation_logs")
-          .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+          .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
           .order("observed_at", { ascending: false })
       : supabase
           .from("observation_logs")
-          .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+          .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
           .eq("member_id", memberId)
           .order("observed_at", { ascending: false });
 
@@ -560,7 +566,7 @@ async function getAllSummaries() {
     supabase.from("club_members").select("id, display_name, role").order("created_at", { ascending: true }),
     supabase
       .from("observation_logs")
-      .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+      .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
       .order("observed_at", { ascending: false }),
     supabase
       .from("point_entries")
@@ -583,7 +589,7 @@ async function getObservationById(observationId: string): Promise<ObservationRow
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("observation_logs")
-    .select("id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path")
+    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .eq("id", observationId)
     .maybeSingle();
 
@@ -644,6 +650,8 @@ function mapLogRow(row: ObservationRow): ObservationLog {
     memberId: row.member_id,
     observedAt: row.observed_at,
     location: row.location,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
     species: row.species,
     points: row.points,
     scoringMemo: row.scoring_memo,

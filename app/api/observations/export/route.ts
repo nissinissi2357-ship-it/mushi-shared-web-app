@@ -1,7 +1,7 @@
-import { listExportLogs, getViewerFromSession } from "@/lib/data";
+import { getViewerFromSession, listExportLogs } from "@/lib/data";
 import { readSession } from "@/lib/session";
 
-function escapeXml(value: string): string {
+function escapeXml(value: string) {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -16,14 +16,29 @@ function buildExcelXml(
     observedAt: string;
     memberDisplayName: string;
     location: string;
+    latitude?: number | null;
+    longitude?: number | null;
     species: string;
     points: number;
     scoringMemo: string;
     imageUrl?: string | null;
     guidePdfUrl?: string | null;
   }>
-): string {
-  const headerCells = ["観察日時", "隊員", "場所", "種名", "ポイント", "隊長メモ", "写真URL", "図鑑PDF URL"]
+) {
+  const headers = [
+    "観察日時",
+    "隊員",
+    "場所",
+    "緯度",
+    "経度",
+    "種名",
+    "ポイント",
+    "隊長メモ",
+    "写真URL",
+    "図鑑PDF URL"
+  ];
+
+  const headerCells = headers
     .map((label) => `<Cell ss:StyleID="header"><Data ss:Type="String">${escapeXml(label)}</Data></Cell>`)
     .join("");
 
@@ -34,6 +49,8 @@ function buildExcelXml(
         <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.observedAt)}</Data></Cell>
         <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.memberDisplayName)}</Data></Cell>
         <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.location)}</Data></Cell>
+        <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.latitude?.toString() || "")}</Data></Cell>
+        <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.longitude?.toString() || "")}</Data></Cell>
         <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.species)}</Data></Cell>
         <Cell ss:StyleID="number"><Data ss:Type="Number">${row.points}</Data></Cell>
         <Cell ss:StyleID="text"><Data ss:Type="String">${escapeXml(row.scoringMemo || "")}</Data></Cell>
@@ -68,8 +85,10 @@ function buildExcelXml(
    <Column ss:Width="130"/>
    <Column ss:Width="90"/>
    <Column ss:Width="120"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="90"/>
    <Column ss:Width="120"/>
-   <Column ss:Width="60"/>
+   <Column ss:Width="70"/>
    <Column ss:Width="240"/>
    <Column ss:Width="180"/>
    <Column ss:Width="180"/>
@@ -80,7 +99,7 @@ function buildExcelXml(
 </Workbook>`;
 }
 
-function sanitizeFileNamePart(value: string): string {
+function sanitizeFileNamePart(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "all";
 }
 

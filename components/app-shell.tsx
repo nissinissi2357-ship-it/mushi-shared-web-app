@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { parseCaptainMessage } from "@/lib/line-parser";
@@ -32,6 +32,8 @@ type AppShellProps = {
 type DraftObservation = {
   observedAt: string;
   location: string;
+  latitude: string;
+  longitude: string;
   species: string;
   points: string;
   scoringMemo: string;
@@ -64,6 +66,8 @@ function getDefaultObservationDraft(): DraftObservation {
   return {
     observedAt: toLocalInputValue(),
     location: "",
+    latitude: "",
+    longitude: "",
     species: "",
     points: "",
     scoringMemo: ""
@@ -315,6 +319,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setDraft((current) => ({
       observedAt: parsed.observedAt || current.observedAt,
       location: parsed.location || current.location,
+      latitude: current.latitude,
+      longitude: current.longitude,
       species: parsed.species || current.species,
       points: parsed.points !== null ? String(parsed.points) : current.points,
       scoringMemo: parsed.scoringMemo || current.scoringMemo
@@ -579,6 +585,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       body: JSON.stringify({
         observedAt: new Date(nextDraft.observedAt).toISOString(),
         location: nextDraft.location,
+        latitude: nextDraft.latitude ? Number(nextDraft.latitude) : null,
+        longitude: nextDraft.longitude ? Number(nextDraft.longitude) : null,
         species: nextDraft.species,
         points: Number(nextDraft.points),
         scoringMemo: nextDraft.scoringMemo
@@ -633,6 +641,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const nextDraft: DraftObservation = {
       observedAt: parsed.observedAt || draft.observedAt,
       location: parsed.location || draft.location,
+      latitude: draft.latitude,
+      longitude: draft.longitude,
       species: parsed.species || draft.species,
       points: parsed.points !== null ? String(parsed.points) : draft.points,
       scoringMemo: parsed.scoringMemo || draft.scoringMemo
@@ -666,6 +676,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setEditingLogDraft({
       observedAt: toLocalInputValue(new Date(log.observedAt)),
       location: log.location,
+      latitude: log.latitude === null || log.latitude === undefined ? "" : String(log.latitude),
+      longitude: log.longitude === null || log.longitude === undefined ? "" : String(log.longitude),
       species: log.species,
       points: String(log.points),
       scoringMemo: log.scoringMemo
@@ -682,12 +694,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          observedAt: new Date(editingLogDraft.observedAt).toISOString(),
-          location: editingLogDraft.location,
-          species: editingLogDraft.species,
-          points: Number(editingLogDraft.points),
-          scoringMemo: editingLogDraft.scoringMemo
+          body: JSON.stringify({
+            observedAt: new Date(editingLogDraft.observedAt).toISOString(),
+            location: editingLogDraft.location,
+            latitude: editingLogDraft.latitude ? Number(editingLogDraft.latitude) : null,
+            longitude: editingLogDraft.longitude ? Number(editingLogDraft.longitude) : null,
+            species: editingLogDraft.species,
+            points: Number(editingLogDraft.points),
+            scoringMemo: editingLogDraft.scoringMemo
         })
       });
 
@@ -1235,6 +1249,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 </label>
 
+                <div className="full-width map-field">
+                  <MapCoordinatePicker
+                    latitude={draft.latitude}
+                    longitude={draft.longitude}
+                    onChange={(coords) =>
+                      setDraft((current) => ({
+                        ...current,
+                        latitude: coords.latitude,
+                        longitude: coords.longitude
+                      }))
+                    }
+                  />
+                </div>
+
                 <label>
                   種名
                   <input
@@ -1366,6 +1394,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               }
                             />
                           </label>
+                          <div className="full-width map-field">
+                            <MapCoordinatePicker
+                              latitude={editingLogDraft.latitude}
+                              longitude={editingLogDraft.longitude}
+                              onChange={(coords) =>
+                                setEditingLogDraft((current) => ({
+                                  ...current,
+                                  latitude: coords.latitude,
+                                  longitude: coords.longitude
+                                }))
+                              }
+                            />
+                          </div>
                           <label>
                             種名
                             <input
@@ -1421,6 +1462,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                           </div>
 
                           <p className="record-location">{log.location}</p>
+                          {log.latitude !== null && log.latitude !== undefined && log.longitude !== null && log.longitude !== undefined ? (
+                            <p className="record-meta">
+                              緯度 {log.latitude.toFixed(5)} / 経度 {log.longitude.toFixed(5)} ・{" "}
+                              <a
+                                href={`https://www.openstreetmap.org/?mlat=${log.latitude}&mlon=${log.longitude}#map=15/${log.latitude}/${log.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                地図で見る
+                              </a>
+                            </p>
+                          ) : null}
                           <p className="record-memo">{log.scoringMemo || "メモなし"}</p>
 
                           <div className="record-assets">
@@ -1607,6 +1660,128 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   );
 }
 
+function MapCoordinatePicker({
+  latitude,
+  longitude,
+  onChange
+}: {
+  latitude: string;
+  longitude: string;
+  onChange: (coords: { latitude: string; longitude: string }) => void;
+}) {
+  const defaultCenter = parseCoordinates(latitude, longitude) ?? { latitude: 34.3963, longitude: 132.4596 };
+  const [center, setCenter] = useState(defaultCenter);
+  const zoom = 11;
+  const tile = latLngToTile(center.latitude, center.longitude, zoom);
+  const marker = parseCoordinates(latitude, longitude);
+  const markerPosition = marker ? projectToTilePixels(marker.latitude, marker.longitude, zoom, tile.x, tile.y) : null;
+
+  useEffect(() => {
+    const nextCenter = parseCoordinates(latitude, longitude);
+    if (nextCenter) {
+      setCenter(nextCenter);
+    }
+  }, [latitude, longitude]);
+
+  function moveMap(direction: "north" | "south" | "east" | "west") {
+    const step = 0.18;
+    setCenter((current) => ({
+      latitude: clampLatitude(
+        direction === "north" ? current.latitude + step : direction === "south" ? current.latitude - step : current.latitude
+      ),
+      longitude: normalizeLongitude(
+        direction === "east" ? current.longitude + step : direction === "west" ? current.longitude - step : current.longitude
+      )
+    }));
+  }
+
+  function handleMapClick(event: ReactMouseEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 256;
+    const y = ((event.clientY - rect.top) / rect.height) * 256;
+    const coords = tilePixelsToLatLng(tile.x, tile.y, zoom, x, y);
+    onChange({
+      latitude: coords.latitude.toFixed(6),
+      longitude: coords.longitude.toFixed(6)
+    });
+  }
+
+  return (
+    <div className="coordinate-picker">
+      <div className="coordinate-picker-head">
+        <div>
+          <p className="section-label">Map</p>
+          <strong>地図から座標を選ぶ</strong>
+        </div>
+        <p className="helper-text">任意項目です。地図をタップすると緯度経度が入ります。</p>
+      </div>
+
+      <div className="map-controls">
+        <button type="button" className="secondary-button" onClick={() => moveMap("north")}>
+          北
+        </button>
+        <button type="button" className="secondary-button" onClick={() => moveMap("west")}>
+          西
+        </button>
+        <button type="button" className="secondary-button" onClick={() => moveMap("east")}>
+          東
+        </button>
+        <button type="button" className="secondary-button" onClick={() => moveMap("south")}>
+          南
+        </button>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => onChange({ latitude: "", longitude: "" })}
+        >
+          座標をクリア
+        </button>
+      </div>
+
+      <div className="map-canvas" onClick={handleMapClick} role="button" tabIndex={0}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`}
+          alt="地図"
+          className="map-tile"
+        />
+        {markerPosition ? (
+          <span
+            className="map-marker"
+            style={{
+              left: `${Math.max(0, Math.min(100, (markerPosition.x / 256) * 100))}%`,
+              top: `${Math.max(0, Math.min(100, (markerPosition.y / 256) * 100))}%`
+            }}
+          />
+        ) : null}
+      </div>
+
+      <div className="coordinate-inputs">
+        <label>
+          緯度
+          <input
+            type="number"
+            step="0.000001"
+            placeholder="例: 34.396300"
+            value={latitude}
+            onChange={(event) => onChange({ latitude: event.target.value, longitude })}
+          />
+        </label>
+        <label>
+          経度
+          <input
+            type="number"
+            step="0.000001"
+            placeholder="例: 132.459600"
+            value={longitude}
+            onChange={(event) => onChange({ latitude, longitude: event.target.value })}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <article className="summary-card">
@@ -1748,4 +1923,73 @@ function buildMonthlyPointSeries(
       recordCount: value.recordCount
     };
   });
+}
+
+function parseCoordinates(latitude: string, longitude: string) {
+  if (!latitude || !longitude) {
+    return null;
+  }
+
+  const parsedLatitude = Number(latitude);
+  const parsedLongitude = Number(longitude);
+  if (Number.isNaN(parsedLatitude) || Number.isNaN(parsedLongitude)) {
+    return null;
+  }
+
+  return {
+    latitude: parsedLatitude,
+    longitude: parsedLongitude
+  };
+}
+
+function latLngToTile(latitude: number, longitude: number, zoom: number) {
+  const scale = 2 ** zoom;
+  const latRad = (clampLatitude(latitude) * Math.PI) / 180;
+  const rawX = Math.floor(((normalizeLongitude(longitude) + 180) / 360) * scale);
+  const rawY = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale
+  );
+  const x = ((rawX % scale) + scale) % scale;
+  const y = Math.max(0, Math.min(scale - 1, rawY));
+
+  return { x, y };
+}
+
+function projectToTilePixels(latitude: number, longitude: number, zoom: number, tileX: number, tileY: number) {
+  const scale = 2 ** zoom;
+  const latRad = (latitude * Math.PI) / 180;
+  const worldX = ((longitude + 180) / 360) * scale * 256;
+  const worldY = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale * 256;
+
+  return {
+    x: worldX - tileX * 256,
+    y: worldY - tileY * 256
+  };
+}
+
+function tilePixelsToLatLng(tileX: number, tileY: number, zoom: number, pixelX: number, pixelY: number) {
+  const scale = 2 ** zoom;
+  const worldX = tileX * 256 + pixelX;
+  const worldY = tileY * 256 + pixelY;
+  const longitude = (worldX / (256 * scale)) * 360 - 180;
+  const mercatorY = Math.PI - (2 * Math.PI * worldY) / (256 * scale);
+  const latitude = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(mercatorY) - Math.exp(-mercatorY)));
+
+  return { latitude, longitude };
+}
+
+function clampLatitude(value: number) {
+  return Math.max(-85, Math.min(85, value));
+}
+
+function normalizeLongitude(value: number) {
+  if (value > 180) {
+    return value - 360;
+  }
+
+  if (value < -180) {
+    return value + 360;
+  }
+
+  return value;
 }
