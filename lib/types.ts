@@ -19,6 +19,10 @@ export type ObservationLog = {
   guidePdfUrl?: string | null;
 };
 
+export type ObservationExportLog = ObservationLog & {
+  memberDisplayName: string;
+};
+
 export type MemberSummary = {
   memberId: string;
   displayName: string;

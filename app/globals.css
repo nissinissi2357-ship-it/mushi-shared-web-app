@@ -262,6 +262,12 @@ select {
   gap: 14px;
 }
 
+.logs-export-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
 .ranking-item,
 .record-card,
 .admin-member-card {
@@ -405,5 +411,9 @@ select:disabled {
 
   .auth-overlay {
     padding-top: 16px;
+  }
+
+  .logs-export-bar {
+    justify-content: stretch;
   }
 }

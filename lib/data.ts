@@ -5,6 +5,7 @@ import type {
   LoginResult,
   Member,
   MemberRole,
+  ObservationExportLog,
   ObservationInsertInput,
   ObservationLog
 } from "@/lib/types";
@@ -286,6 +287,33 @@ export async function insertObservation(input: ObservationInsertInput, member: M
   return mapLogRow(data);
 }
 
+export async function listExportLogs(
+  member: Member,
+  filterMemberId?: string | null
+): Promise<ObservationExportLog[]> {
+  const supabase = createAdminClient();
+  const effectiveMemberId =
+    member.role === "captain" || member.role === "admin" ? filterMemberId ?? null : member.id;
+
+  let query = supabase
+    .from("observation_logs")
+    .select(
+      "id, member_id, observed_at, location, species, points, scoring_memo, image_path, guide_pdf_path, club_members!inner(display_name)"
+    )
+    .order("observed_at", { ascending: false });
+
+  if (effectiveMemberId) {
+    query = query.eq("member_id", effectiveMemberId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => mapExportLogRow(row));
+}
+
 async function buildViewer(member: Member): Promise<LoginResult> {
   const logs = await getLogsForMember(member.id, member.role);
   const summaries =
@@ -397,5 +425,25 @@ function mapLogRow(row: {
     scoringMemo: row.scoring_memo,
     imageUrl: row.image_path,
     guidePdfUrl: row.guide_pdf_path
+  };
+}
+
+function mapExportLogRow(row: {
+  id: string;
+  member_id: string;
+  observed_at: string;
+  location: string;
+  species: string;
+  points: number;
+  scoring_memo: string;
+  image_path?: string | null;
+  guide_pdf_path?: string | null;
+  club_members?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
+}): ObservationExportLog {
+  const memberRow = Array.isArray(row.club_members) ? row.club_members[0] : row.club_members;
+
+  return {
+    ...mapLogRow(row),
+    memberDisplayName: memberRow?.display_name || "不明"
   };
 }

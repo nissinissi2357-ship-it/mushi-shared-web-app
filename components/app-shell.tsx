@@ -88,6 +88,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [adminRoleDrafts, setAdminRoleDrafts] = useState<Record<string, MemberRole>>(buildRoleDrafts(initialMembers));
   const [statusMessage, setStatusMessage] = useState<string | null>(warning);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isAccountSaving, setIsAccountSaving] = useState(false);
@@ -168,6 +169,51 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function refreshEverything() {
     await Promise.all([refreshMembers(), refreshViewerState()]);
+  }
+
+  async function handleExportLogs() {
+    if (!currentMember) {
+      setStatusMessage("先にログインしてください。");
+      return;
+    }
+
+    setIsExporting(true);
+    setStatusMessage(null);
+
+    try {
+      const params = new URLSearchParams();
+      if (canViewRanking && logMemberFilterId) {
+        params.set("memberId", logMemberFilterId);
+      }
+
+      const response = await fetch(`/api/observations/export${params.size ? `?${params.toString()}` : ""}`, {
+        method: "GET"
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Excel出力に失敗しました。");
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("content-disposition") || "";
+      const fileNameMatch = contentDisposition.match(/filename="?(?<name>[^"]+)"?/);
+      const fileName = decodeURIComponent(fileNameMatch?.groups?.name || "mushi-observations.xls");
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      setStatusMessage("観察ログをExcel形式で出力しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Excel出力に失敗しました。");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   async function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1033,6 +1079,17 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </select>
                   </label>
                 ) : null}
+              </div>
+
+              <div className="logs-export-bar">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleExportLogs}
+                  disabled={isExporting || filteredLogs.length === 0}
+                >
+                  {isExporting ? "Excel出力中..." : "Excel出力"}
+                </button>
               </div>
 
               <div className="record-list">
