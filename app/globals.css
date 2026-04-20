@@ -46,7 +46,8 @@ select {
 .hero,
 .panel,
 .summary-card,
-.record-card {
+.record-card,
+.auth-panel {
   backdrop-filter: blur(18px);
   background: var(--panel);
   border: 1px solid rgba(31, 42, 31, 0.08);
@@ -56,6 +57,20 @@ select {
 .hero {
   border-radius: 32px;
   padding: 28px;
+}
+
+.hero-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: end;
 }
 
 .eyebrow,
@@ -69,7 +84,8 @@ select {
 }
 
 .hero h1,
-.panel h2 {
+.panel h2,
+.auth-panel h2 {
   margin: 8px 0 0;
   font-weight: 700;
 }
@@ -81,12 +97,30 @@ select {
   line-height: 1.7;
 }
 
-.session-panel {
-  margin-top: 20px;
-  padding: 18px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(31, 42, 31, 0.08);
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 28, 20, 0.38);
+  display: flex;
+  align-items: start;
+  justify-content: center;
+  padding: 72px 16px 24px;
+  z-index: 50;
+}
+
+.session-panel.auth-panel {
+  width: min(920px, 100%);
+  margin-top: 0;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 251, 243, 0.96);
+}
+
+.auth-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
 }
 
 .session-grid,
@@ -330,9 +364,22 @@ select:disabled {
   }
 
   .hero,
-  .panel {
+  .panel,
+  .session-panel.auth-panel {
     border-radius: 24px;
     padding: 18px;
+  }
+
+  .hero-top,
+  .auth-panel-head,
+  .panel-head,
+  .record-top {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .auth-buttons {
+    justify-content: start;
   }
 
   .hero-stats,
@@ -341,9 +388,7 @@ select:disabled {
     grid-template-columns: 1fr;
   }
 
-  .panel-head,
-  .record-top {
-    flex-direction: column;
-    align-items: start;
+  .auth-overlay {
+    padding-top: 16px;
   }
 }

@@ -72,6 +72,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
+  const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id);
@@ -178,6 +179,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
       await refreshViewerState();
       setLoginPasscode("");
+      setIsAuthPanelOpen(false);
       setStatusMessage(`${payload.member.displayName} さんでログインしました。`);
       setActiveTab("home");
     } catch (error) {
@@ -196,6 +198,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setSummaries([]);
       setLogMemberFilterId(null);
       setLoginPasscode("");
+      setIsAuthPanelOpen(false);
       setStatusMessage("ログアウトしました。");
     }
   }
@@ -324,86 +327,34 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   return (
     <div className="app-shell">
       <header className="hero">
-        <p className="eyebrow">Shared Edition</p>
-        <h1>ムシムシ探検隊ログ</h1>
+        <div className="hero-top">
+          <div>
+            <p className="eyebrow">Shared Edition</p>
+            <h1>ムシムシ探検隊ログ</h1>
+          </div>
+
+          <div className="auth-buttons">
+            {currentMember ? (
+              <>
+                <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
+                  {currentMember.displayName}
+                </button>
+                <button type="button" className="ghost-button" onClick={handleLogout}>
+                  ログアウト
+                </button>
+              </>
+            ) : (
+              <button type="button" className="primary-button" onClick={() => setIsAuthPanelOpen(true)}>
+                ログイン
+              </button>
+            )}
+          </div>
+        </div>
+
         <p className="hero-copy">
           ログインした隊員だけが自分のホームと観察ログを見られる共有版です。
         </p>
-
-        <section className="session-panel">
-          <div>
-            <p className="section-label">Member</p>
-            <h2>{currentMember ? `${currentMember.displayName} さんのホーム` : "ログインしてください"}</h2>
-          </div>
-
-          <div className="session-grid">
-            <label>
-              ログインする隊員
-              <select
-                value={selectedMemberId}
-                onChange={(event) => setSelectedMemberId(event.target.value)}
-                disabled={members.length === 0}
-              >
-                {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "管理者" : "隊員"})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              合言葉
-              <input
-                type="password"
-                placeholder="4文字以上"
-                value={loginPasscode}
-                onChange={(event) => setLoginPasscode(event.target.value)}
-              />
-            </label>
-
-            <div className="session-actions">
-              <button type="button" className="primary-button" onClick={handleLogin} disabled={isLoggingIn || !selectedMember}>
-                {isLoggingIn ? "確認中..." : "ログイン"}
-              </button>
-              <button type="button" className="ghost-button" onClick={handleLogout} disabled={!currentMember}>
-                ログアウト
-              </button>
-            </div>
-          </div>
-
-          <form className="registration-box" onSubmit={handleRegister}>
-            <label>
-              新しい隊員名
-              <input
-                type="text"
-                placeholder="例: たろう"
-                value={registerDraft.displayName}
-                onChange={(event) => setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))}
-              />
-            </label>
-
-            <label>
-              合言葉
-              <input
-                type="password"
-                placeholder="4文字以上"
-                value={registerDraft.passcode}
-                onChange={(event) => setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))}
-              />
-            </label>
-
-            <div className="session-actions">
-              <button type="submit" className="secondary-button" disabled={isRegistering}>
-                {isRegistering ? "登録中..." : "隊員を登録"}
-              </button>
-            </div>
-          </form>
-
-          <p className="helper-text">データソース: {source === "supabase" ? "Supabase" : "フォールバック表示"}</p>
-          {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
-        </section>
+        {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
 
         <div className="hero-stats">
           <StatCard label="あなたのポイント" value={`${currentSummary?.totalPoints ?? 0}P`} />
@@ -423,6 +374,91 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           />
         </div>
       </header>
+
+      {isAuthPanelOpen ? (
+        <div className="auth-overlay" onClick={() => setIsAuthPanelOpen(false)}>
+          <section className="session-panel auth-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="auth-panel-head">
+              <div>
+                <p className="section-label">Member</p>
+                <h2>{currentMember ? "アカウント" : "ログイン"}</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
+                閉じる
+              </button>
+            </div>
+
+            <div className="session-grid">
+              <label>
+                ログインする隊員
+                <select
+                  value={selectedMemberId}
+                  onChange={(event) => setSelectedMemberId(event.target.value)}
+                  disabled={members.length === 0}
+                >
+                  {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "管理者" : "隊員"})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                合言葉
+                <input
+                  type="password"
+                  placeholder="4文字以上"
+                  value={loginPasscode}
+                  onChange={(event) => setLoginPasscode(event.target.value)}
+                />
+              </label>
+
+              <div className="session-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleLogin}
+                  disabled={isLoggingIn || !selectedMember}
+                >
+                  {isLoggingIn ? "確認中..." : "ログイン"}
+                </button>
+              </div>
+            </div>
+
+            <form className="registration-box" onSubmit={handleRegister}>
+              <label>
+                新しい隊員名
+                <input
+                  type="text"
+                  placeholder="例: たろう"
+                  value={registerDraft.displayName}
+                  onChange={(event) => setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))}
+                />
+              </label>
+
+              <label>
+                合言葉
+                <input
+                  type="password"
+                  placeholder="4文字以上"
+                  value={registerDraft.passcode}
+                  onChange={(event) => setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))}
+                />
+              </label>
+
+              <div className="session-actions">
+                <button type="submit" className="secondary-button" disabled={isRegistering}>
+                  {isRegistering ? "登録中..." : "隊員を登録"}
+                </button>
+              </div>
+            </form>
+
+            <p className="helper-text">データソース: {source === "supabase" ? "Supabase" : "フォールバック表示"}</p>
+          </section>
+        </div>
+      ) : null}
 
       {currentMember ? (
         <>
@@ -657,7 +693,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             </section>
           ) : null}
         </>
-      ) : null}
+      ) : (
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <p className="section-label">Start</p>
+              <h2>ログインしてください</h2>
+            </div>
+          </div>
+          <p className="helper-text">
+            右上のログインボタンから入ると、ホーム・観察登録・観察ログが使えるようになります。
+          </p>
+        </section>
+      )}
     </div>
   );
 }
