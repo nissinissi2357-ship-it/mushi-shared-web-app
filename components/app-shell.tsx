@@ -49,6 +49,9 @@ function getDefaultDraft(): DraftObservation {
   };
 }
 
+const defaultParseStatus =
+  "隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。";
+
 export function AppShell({ initialMembers, source, warning, initialViewer }: AppShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [members, setMembers] = useState<Member[]>(initialMembers);
@@ -57,19 +60,30 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [currentMember, setCurrentMember] = useState<Member | null>(initialViewer?.member ?? null);
   const [logs, setLogs] = useState<ObservationLog[]>(initialViewer?.logs ?? []);
   const [summaries, setSummaries] = useState<MemberSummary[]>(initialViewer?.summaries ?? []);
-  const [draftPhotoMessage, setDraftPhotoMessage] = useState("写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。");
+  const [draftPhotoMessage, setDraftPhotoMessage] = useState(
+    "写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。"
+  );
   const [draft, setDraft] = useState<DraftObservation>(getDefaultDraft);
   const [linePaste, setLinePaste] = useState("");
-  const [parseStatus, setParseStatus] = useState("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
+  const [parseStatus, setParseStatus] = useState(defaultParseStatus);
   const [registerDraft, setRegisterDraft] = useState<RegisterDraft>({ displayName: "", passcode: "" });
   const [statusMessage, setStatusMessage] = useState<string | null>(warning);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id);
   const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
+  const filteredLogs =
+    canViewRanking && logMemberFilterId
+      ? logs.filter((log) => log.memberId === logMemberFilterId)
+      : logs;
+  const filteredLogMemberName =
+    canViewRanking && logMemberFilterId
+      ? members.find((member) => member.id === logMemberFilterId)?.displayName || null
+      : null;
 
   async function refreshViewerState() {
     const response = await fetch("/api/viewer", {
@@ -88,6 +102,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setSelectedMemberId(payload.member.id);
     setLogs(payload.logs);
     setSummaries(payload.summaries);
+
+    if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
+      setLogMemberFilterId(null);
+    }
 
     return payload;
   }
@@ -176,6 +194,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setCurrentMember(null);
       setLogs([]);
       setSummaries([]);
+      setLogMemberFilterId(null);
       setLoginPasscode("");
       setStatusMessage("ログアウトしました。");
     }
@@ -230,10 +249,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     if (!response.ok || !payload.log) {
       throw new Error(payload.error || "観察ログの保存に失敗しました。");
     }
+
     await refreshViewerState();
     setDraft(getDefaultDraft());
     setLinePaste("");
-    setParseStatus("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
+    setParseStatus(defaultParseStatus);
     setStatusMessage("観察ログを保存しました。");
     setActiveTab("logs");
   }
@@ -294,7 +314,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       await saveObservation(nextDraft);
-      setDraft(nextDraft);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "観察ログの保存に失敗しました。");
     } finally {
@@ -437,7 +456,15 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               {canViewRanking ? (
                 <div className="ranking-list">
                   {summaries.map((summary, index) => (
-                    <article key={summary.memberId} className="ranking-item">
+                    <article
+                      key={summary.memberId}
+                      className="ranking-item"
+                      onClick={() => {
+                        setLogMemberFilterId(summary.memberId);
+                        setActiveTab("logs");
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
                       <span className="ranking-rank">{index + 1}</span>
                       <div>
                         <p className="ranking-name">{summary.displayName}</p>
@@ -574,7 +601,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onClick={() => {
                       setDraft(getDefaultDraft());
                       setLinePaste("");
-                      setParseStatus("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
+                      setParseStatus(defaultParseStatus);
                     }}
                     disabled={isSaving}
                   >
@@ -591,13 +618,29 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Logs</p>
                   <h2>観察ログ</h2>
+                  {filteredLogMemberName ? (
+                    <p className="helper-text">{filteredLogMemberName} さんの観察ログを表示中です。</p>
+                  ) : null}
                 </div>
+                {filteredLogMemberName ? (
+                  <button type="button" className="secondary-button" onClick={() => setLogMemberFilterId(null)}>
+                    全員分を表示
+                  </button>
+                ) : null}
               </div>
 
               <div className="record-list">
-                {logs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
-                {logs.map((log) => (
-                  <LogCard key={log.id} log={log} />
+                {filteredLogs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
+                {filteredLogs.map((log) => (
+                  <LogCard
+                    key={log.id}
+                    log={log}
+                    memberName={
+                      canViewRanking
+                        ? members.find((member) => member.id === log.memberId)?.displayName || "不明"
+                        : null
+                    }
+                  />
                 ))}
               </div>
             </section>
@@ -617,12 +660,13 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LogCard({ log }: { log: ObservationLog }) {
+function LogCard({ log, memberName }: { log: ObservationLog; memberName?: string | null }) {
   return (
     <article className="record-card">
       <div className="record-top">
         <div>
           <p className="record-meta">{formatDateTime(log.observedAt)}</p>
+          {memberName ? <p className="record-meta">{memberName}</p> : null}
           <h3 className="record-species">{log.species}</h3>
         </div>
         <div className="point-badge">{log.points}P</div>
