@@ -622,10 +622,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     <p className="helper-text">{filteredLogMemberName} さんの観察ログを表示中です。</p>
                   ) : null}
                 </div>
-                {filteredLogMemberName ? (
-                  <button type="button" className="secondary-button" onClick={() => setLogMemberFilterId(null)}>
-                    全員分を表示
-                  </button>
+                {canViewRanking ? (
+                  <label>
+                    隊員で絞り込み
+                    <select
+                      value={logMemberFilterId ?? ""}
+                      onChange={(event) => setLogMemberFilterId(event.target.value || null)}
+                    >
+                      <option value="">全員</option>
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 ) : null}
               </div>
 
