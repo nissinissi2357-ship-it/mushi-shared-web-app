@@ -160,6 +160,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
 
+  const monthlyPointSeries = useMemo(() => {
+    if (!currentMember) {
+      return [];
+    }
+
+    return buildMonthlyPointSeries(logs, pointEntries, currentMember.id);
+  }, [currentMember, logs, pointEntries]);
+
   useEffect(() => {
     if (currentMember && !editingPointEntryId) {
       setPointDraft((current) => ({
@@ -1132,6 +1140,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <p>ランキングは隊長と Admin だけが見られます。</p>
               </div>
 
+              <MonthlyTrendChart data={monthlyPointSeries} />
+
               {canViewRanking ? (
                 <div className="ranking-list">
                   {summaries.map((summary, index) => (
@@ -1608,4 +1618,138 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: number; recordCount: number }> }) {
+  const width = 640;
+  const height = 220;
+  const paddingX = 28;
+  const paddingTop = 18;
+  const paddingBottom = 34;
+  const graphWidth = width - paddingX * 2;
+  const graphHeight = height - paddingTop - paddingBottom;
+  const maxValue = Math.max(...data.map((item) => item.total), 1);
+
+  const points = data.map((item, index) => {
+    const x = paddingX + (graphWidth * index) / Math.max(data.length - 1, 1);
+    const y = paddingTop + graphHeight - (item.total / maxValue) * graphHeight;
+    return { ...item, x, y };
+  });
+
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const areaPath = points.length
+    ? `${linePath} L ${points[points.length - 1].x} ${paddingTop + graphHeight} L ${points[0].x} ${paddingTop + graphHeight} Z`
+    : "";
+
+  return (
+    <section className="trend-card">
+      <div className="trend-head">
+        <div>
+          <p className="section-label">Trend</p>
+          <h3>月別ポイント推移</h3>
+        </div>
+          <p className="helper-text">直近6か月の観察ポイントと追加ポイントの合計です。観察件数も併記しています。</p>
+      </div>
+
+      {data.length === 0 ? (
+        <p className="helper-text">まだグラフに表示できるポイントがありません。</p>
+      ) : (
+        <>
+          <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="月別ポイント推移">
+            <line
+              x1={paddingX}
+              y1={paddingTop + graphHeight}
+              x2={width - paddingX}
+              y2={paddingTop + graphHeight}
+              className="trend-axis"
+            />
+            {areaPath ? <path d={areaPath} className="trend-area" /> : null}
+            {linePath ? <path d={linePath} className="trend-line" /> : null}
+            {points.map((point) => (
+              <g key={point.label}>
+                <circle cx={point.x} cy={point.y} r="5" className="trend-dot" />
+                <text x={point.x} y={height - 10} textAnchor="middle" className="trend-label">
+                  {point.label}
+                </text>
+                <text x={point.x} y={height - 24} textAnchor="middle" className="trend-count">
+                  {point.recordCount}件
+                </text>
+                <text x={point.x} y={point.y - 12} textAnchor="middle" className="trend-value">
+                  {point.total}P
+                </text>
+              </g>
+            ))}
+          </svg>
+
+          <div className="trend-legend">
+            {data.map((item) => (
+              <div key={item.label} className="trend-legend-item">
+                <span>{item.label}</span>
+                <strong>{item.total}P</strong>
+                <small>{item.recordCount}件</small>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function buildMonthlyPointSeries(
+  logs: ObservationLog[],
+  pointEntries: PointEntry[],
+  memberId: string,
+  months = 6
+): Array<{ label: string; total: number; recordCount: number }> {
+  const totals = new Map<string, { total: number; recordCount: number }>();
+  const current = new Date();
+  const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1);
+
+  for (let offset = months - 1; offset >= 0; offset -= 1) {
+    const monthDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - offset, 1);
+    const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+    totals.set(key, { total: 0, recordCount: 0 });
+  }
+
+  for (const log of logs) {
+    if (log.memberId !== memberId) {
+      continue;
+    }
+
+    const observedAt = new Date(log.observedAt);
+    const key = `${observedAt.getFullYear()}-${String(observedAt.getMonth() + 1).padStart(2, "0")}`;
+    if (totals.has(key)) {
+      const currentMonthTotal = totals.get(key)!;
+      totals.set(key, {
+        total: currentMonthTotal.total + log.points,
+        recordCount: currentMonthTotal.recordCount + 1
+      });
+    }
+  }
+
+  for (const entry of pointEntries) {
+    if (entry.memberId !== memberId) {
+      continue;
+    }
+
+    const awardedAt = new Date(entry.awardedAt);
+    const key = `${awardedAt.getFullYear()}-${String(awardedAt.getMonth() + 1).padStart(2, "0")}`;
+    if (totals.has(key)) {
+      const currentMonthTotal = totals.get(key)!;
+      totals.set(key, {
+        total: currentMonthTotal.total + entry.points,
+        recordCount: currentMonthTotal.recordCount
+      });
+    }
+  }
+
+  return Array.from(totals.entries()).map(([key, value]) => {
+    const [, month] = key.split("-");
+    return {
+      label: `${Number(month)}月`,
+      total: value.total,
+      recordCount: value.recordCount
+    };
+  });
 }

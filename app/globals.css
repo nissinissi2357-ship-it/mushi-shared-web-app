@@ -179,6 +179,97 @@ select {
   margin-top: 6px;
 }
 
+.trend-card {
+  margin-top: 22px;
+  border-radius: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.trend-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.trend-head h3 {
+  margin: 4px 0 0;
+}
+
+.trend-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.trend-axis {
+  stroke: rgba(47, 107, 63, 0.24);
+  stroke-width: 2;
+}
+
+.trend-area {
+  fill: rgba(92, 163, 88, 0.16);
+}
+
+.trend-line {
+  fill: none;
+  stroke: #2f6b3f;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-dot {
+  fill: #d98b2b;
+  stroke: #fff7eb;
+  stroke-width: 3;
+}
+
+.trend-label,
+.trend-count,
+.trend-value {
+  fill: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.trend-value {
+  fill: var(--accent-strong);
+  font-weight: 700;
+}
+
+.trend-count {
+  fill: #7e4500;
+}
+
+.trend-legend {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.trend-legend-item {
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.trend-legend-item span,
+.trend-legend-item strong,
+.trend-legend-item small {
+  display: block;
+}
+
+.trend-legend-item small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
 .tab-bar {
   display: flex;
   gap: 10px;
@@ -420,6 +511,7 @@ select:disabled {
   }
 
   .hero-stats,
+  .trend-legend,
   .session-grid,
   .registration-box,
   .account-form,
@@ -439,6 +531,11 @@ select:disabled {
   .toolbar-row,
   .inline-actions {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trend-head {
+    align-items: start;
     flex-direction: column;
   }
 }
