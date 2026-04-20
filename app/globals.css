@@ -387,6 +387,11 @@ select {
   align-items: end;
 }
 
+.coordinate-picker-head strong:not(.map-title),
+.coordinate-picker-head > .helper-text:not(.map-help) {
+  display: none;
+}
+
 .coordinate-picker-head strong {
   display: block;
   margin-top: 4px;
@@ -395,12 +400,38 @@ select {
 .map-controls,
 .coordinate-inputs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
+  align-items: center;
 }
 
 .coordinate-inputs {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.zoom-control {
+  display: grid;
+  gap: 6px;
+  font-size: 0;
+}
+
+.zoom-label {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.zoom-control input {
+  width: 100%;
+  font-size: 1rem;
+}
+
+.map-controls .ghost-button {
+  font-size: 0;
+}
+
+.map-controls .ghost-button::before {
+  content: "座標をクリア";
+  font-size: 0.95rem;
 }
 
 .map-canvas {
@@ -410,16 +441,24 @@ select {
   aspect-ratio: 1;
   overflow: hidden;
   border-radius: 18px;
-  cursor: crosshair;
+  cursor: grab;
   border: 1px solid rgba(31, 42, 31, 0.12);
+  background: #d8e3cf;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  touch-action: none;
+}
+
+.map-canvas:active {
+  cursor: grabbing;
 }
 
 .map-tile {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  position: absolute;
+  width: 256px;
+  height: 256px;
   display: block;
+  user-select: none;
+  pointer-events: none;
 }
 
 .map-marker {
@@ -605,7 +644,11 @@ select:disabled {
     flex-direction: column;
   }
 
-  .coordinate-picker-head,
+  .coordinate-picker-head {
+    flex-direction: column;
+    align-items: start;
+  }
+
   .map-controls,
   .coordinate-inputs {
     grid-template-columns: 1fr;

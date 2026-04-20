@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { parseCaptainMessage } from "@/lib/line-parser";
@@ -1671,10 +1679,37 @@ function MapCoordinatePicker({
 }) {
   const defaultCenter = parseCoordinates(latitude, longitude) ?? { latitude: 34.3963, longitude: 132.4596 };
   const [center, setCenter] = useState(defaultCenter);
-  const zoom = 11;
-  const tile = latLngToTile(center.latitude, center.longitude, zoom);
+  const [zoom, setZoom] = useState(11);
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const gestureRef = useRef<{
+    mode: "idle" | "pan" | "pinch";
+    startX: number;
+    startY: number;
+    startCenter: { latitude: number; longitude: number };
+    startZoom: number;
+    pinchStartDistance: number;
+    dragged: boolean;
+  }>({
+    mode: "idle",
+    startX: 0,
+    startY: 0,
+    startCenter: defaultCenter,
+    startZoom: 11,
+    pinchStartDistance: 0,
+    dragged: false
+  });
+  const mapSize = 320;
+  const centerWorld = latLngToWorldPixels(center.latitude, center.longitude, zoom);
+  const topLeftWorld = {
+    x: centerWorld.x - mapSize / 2,
+    y: centerWorld.y - mapSize / 2
+  };
   const marker = parseCoordinates(latitude, longitude);
-  const markerPosition = marker ? projectToTilePixels(marker.latitude, marker.longitude, zoom, tile.x, tile.y) : null;
+  const markerPosition = marker
+    ? projectToViewportPixels(marker.latitude, marker.longitude, zoom, topLeftWorld.x, topLeftWorld.y)
+    : null;
+  const tiles = buildVisibleTiles(topLeftWorld.x, topLeftWorld.y, zoom, mapSize);
 
   useEffect(() => {
     const nextCenter = parseCoordinates(latitude, longitude);
@@ -1683,27 +1718,154 @@ function MapCoordinatePicker({
     }
   }, [latitude, longitude]);
 
-  function moveMap(direction: "north" | "south" | "east" | "west") {
-    const step = 0.18;
-    setCenter((current) => ({
-      latitude: clampLatitude(
-        direction === "north" ? current.latitude + step : direction === "south" ? current.latitude - step : current.latitude
-      ),
-      longitude: normalizeLongitude(
-        direction === "east" ? current.longitude + step : direction === "west" ? current.longitude - step : current.longitude
-      )
-    }));
+  function updateZoom(nextZoom: number, anchorClientX?: number, anchorClientY?: number) {
+    const clampedZoom = clampZoom(nextZoom);
+    if (clampedZoom === zoom) {
+      return;
+    }
+
+    if (!mapRef.current || anchorClientX == null || anchorClientY == null) {
+      setZoom(clampedZoom);
+      return;
+    }
+
+    const rect = mapRef.current.getBoundingClientRect();
+    const anchorX = ((anchorClientX - rect.left) / rect.width) * mapSize;
+    const anchorY = ((anchorClientY - rect.top) / rect.height) * mapSize;
+    const anchorCoordinates = worldPixelsToLatLng(topLeftWorld.x + anchorX, topLeftWorld.y + anchorY, zoom);
+    const anchorWorldAtNextZoom = latLngToWorldPixels(
+      anchorCoordinates.latitude,
+      anchorCoordinates.longitude,
+      clampedZoom
+    );
+    const nextCenterWorld = {
+      x: anchorWorldAtNextZoom.x - (anchorX - mapSize / 2),
+      y: anchorWorldAtNextZoom.y - (anchorY - mapSize / 2)
+    };
+    const nextCenter = worldPixelsToLatLng(nextCenterWorld.x, nextCenterWorld.y, clampedZoom);
+
+    setZoom(clampedZoom);
+    setCenter({
+      latitude: clampLatitude(nextCenter.latitude),
+      longitude: normalizeLongitude(nextCenter.longitude)
+    });
   }
 
-  function handleMapClick(event: ReactMouseEvent<HTMLDivElement>) {
+  function pickCoordinate(event: ReactPointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 256;
-    const y = ((event.clientY - rect.top) / rect.height) * 256;
-    const coords = tilePixelsToLatLng(tile.x, tile.y, zoom, x, y);
+    const x = ((event.clientX - rect.left) / rect.width) * mapSize;
+    const y = ((event.clientY - rect.top) / rect.height) * mapSize;
+    const coords = worldPixelsToLatLng(topLeftWorld.x + x, topLeftWorld.y + y, zoom);
     onChange({
       latitude: coords.latitude.toFixed(6),
       longitude: coords.longitude.toFixed(6)
     });
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointersRef.current.size === 1) {
+      gestureRef.current = {
+        mode: "pan",
+        startX: event.clientX,
+        startY: event.clientY,
+        startCenter: center,
+        startZoom: zoom,
+        pinchStartDistance: 0,
+        dragged: false
+      };
+      return;
+    }
+
+    if (pointersRef.current.size === 2) {
+      const [firstPointer, secondPointer] = Array.from(pointersRef.current.values());
+      gestureRef.current = {
+        mode: "pinch",
+        startX: 0,
+        startY: 0,
+        startCenter: center,
+        startZoom: zoom,
+        pinchStartDistance: getPointerDistance(firstPointer, secondPointer),
+        dragged: true
+      };
+    }
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!pointersRef.current.has(event.pointerId)) {
+      return;
+    }
+
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (gestureRef.current.mode === "pinch" && pointersRef.current.size >= 2) {
+      const [firstPointer, secondPointer] = Array.from(pointersRef.current.values());
+      const nextDistance = getPointerDistance(firstPointer, secondPointer);
+      const midpoint = {
+        x: (firstPointer.x + secondPointer.x) / 2,
+        y: (firstPointer.y + secondPointer.y) / 2
+      };
+      const distanceRatio = nextDistance / Math.max(gestureRef.current.pinchStartDistance, 1);
+      const nextZoom = clampZoom(Math.round(gestureRef.current.startZoom + Math.log2(distanceRatio)));
+      updateZoom(nextZoom, midpoint.x, midpoint.y);
+      return;
+    }
+
+    if (gestureRef.current.mode !== "pan") {
+      return;
+    }
+
+    const deltaX = event.clientX - gestureRef.current.startX;
+    const deltaY = event.clientY - gestureRef.current.startY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      gestureRef.current.dragged = true;
+    }
+
+    const startWorld = latLngToWorldPixels(
+      gestureRef.current.startCenter.latitude,
+      gestureRef.current.startCenter.longitude,
+      zoom
+    );
+    const nextCenter = worldPixelsToLatLng(startWorld.x - deltaX, startWorld.y - deltaY, zoom);
+    setCenter({
+      latitude: clampLatitude(nextCenter.latitude),
+      longitude: normalizeLongitude(nextCenter.longitude)
+    });
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const wasSingleTap = gestureRef.current.mode === "pan" && !gestureRef.current.dragged && pointersRef.current.size === 1;
+    pointersRef.current.delete(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (pointersRef.current.size === 0) {
+      gestureRef.current.mode = "idle";
+    } else if (pointersRef.current.size === 1) {
+      const [remainingPointer] = Array.from(pointersRef.current.values());
+      gestureRef.current = {
+        mode: "pan",
+        startX: remainingPointer.x,
+        startY: remainingPointer.y,
+        startCenter: center,
+        startZoom: zoom,
+        pinchStartDistance: 0,
+        dragged: true
+      };
+    }
+
+    if (wasSingleTap) {
+      pickCoordinate(event);
+    }
+  }
+
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 1 : -1;
+    updateZoom(zoom + delta, event.clientX, event.clientY);
   }
 
   return (
@@ -1711,24 +1873,26 @@ function MapCoordinatePicker({
       <div className="coordinate-picker-head">
         <div>
           <p className="section-label">Map</p>
+          <strong className="map-title">地図から場所を選ぶ</strong>
           <strong>地図から座標を選ぶ</strong>
         </div>
-        <p className="helper-text">任意項目です。地図をタップすると緯度経度が入ります。</p>
+        <p className="helper-text">任意項目です。ドラッグで移動、ズームで拡大縮小、タップで座標を選べます。</p>
+        <p className="helper-text map-help">ドラッグで移動、ピンチやホイール、下のスライダーで拡大縮小できます。タップで座標を選べます。</p>
       </div>
 
       <div className="map-controls">
-        <button type="button" className="secondary-button" onClick={() => moveMap("north")}>
-          北
-        </button>
-        <button type="button" className="secondary-button" onClick={() => moveMap("west")}>
-          西
-        </button>
-        <button type="button" className="secondary-button" onClick={() => moveMap("east")}>
-          東
-        </button>
-        <button type="button" className="secondary-button" onClick={() => moveMap("south")}>
-          南
-        </button>
+        <label className="zoom-control">
+          <span className="zoom-label">ズーム</span>
+          ズーム
+          <input
+            type="range"
+            min="7"
+            max="17"
+            step="1"
+            value={zoom}
+            onChange={(event) => updateZoom(Number(event.target.value))}
+          />
+        </label>
         <button
           type="button"
           className="ghost-button"
@@ -1738,19 +1902,35 @@ function MapCoordinatePicker({
         </button>
       </div>
 
-      <div className="map-canvas" onClick={handleMapClick} role="button" tabIndex={0}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`}
-          alt="地図"
-          className="map-tile"
-        />
+      <div
+        ref={mapRef}
+        className="map-canvas"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={handleWheel}
+        role="button"
+        tabIndex={0}
+        aria-label="観察場所の地図"
+      >
+        {tiles.map((tile) => (
+          <img
+            key={`${tile.zoom}-${tile.x}-${tile.y}`}
+            src={`https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`}
+            alt=""
+            className="map-tile"
+            style={{ left: `${tile.left}px`, top: `${tile.top}px` }}
+            draggable={false}
+          />
+        ))}
         {markerPosition ? (
           <span
             className="map-marker"
             style={{
-              left: `${Math.max(0, Math.min(100, (markerPosition.x / 256) * 100))}%`,
-              top: `${Math.max(0, Math.min(100, (markerPosition.y / 256) * 100))}%`
+              left: `${Math.max(0, Math.min(100, (markerPosition.x / mapSize) * 100))}%`,
+              top: `${Math.max(0, Math.min(100, (markerPosition.y / mapSize) * 100))}%`
             }}
           />
         ) : null}
@@ -1955,27 +2135,73 @@ function latLngToTile(latitude: number, longitude: number, zoom: number) {
   return { x, y };
 }
 
-function projectToTilePixels(latitude: number, longitude: number, zoom: number, tileX: number, tileY: number) {
+function latLngToWorldPixels(latitude: number, longitude: number, zoom: number) {
   const scale = 2 ** zoom;
-  const latRad = (latitude * Math.PI) / 180;
-  const worldX = ((longitude + 180) / 360) * scale * 256;
+  const latRad = (clampLatitude(latitude) * Math.PI) / 180;
+  const worldX = ((normalizeLongitude(longitude) + 180) / 360) * scale * 256;
   const worldY = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale * 256;
 
+  return { x: worldX, y: worldY };
+}
+
+function projectToViewportPixels(
+  latitude: number,
+  longitude: number,
+  zoom: number,
+  topLeftWorldX: number,
+  topLeftWorldY: number
+) {
+  const world = latLngToWorldPixels(latitude, longitude, zoom);
+
   return {
-    x: worldX - tileX * 256,
-    y: worldY - tileY * 256
+    x: world.x - topLeftWorldX,
+    y: world.y - topLeftWorldY
   };
 }
 
-function tilePixelsToLatLng(tileX: number, tileY: number, zoom: number, pixelX: number, pixelY: number) {
+function worldPixelsToLatLng(worldX: number, worldY: number, zoom: number) {
   const scale = 2 ** zoom;
-  const worldX = tileX * 256 + pixelX;
-  const worldY = tileY * 256 + pixelY;
   const longitude = (worldX / (256 * scale)) * 360 - 180;
   const mercatorY = Math.PI - (2 * Math.PI * worldY) / (256 * scale);
   const latitude = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(mercatorY) - Math.exp(-mercatorY)));
 
   return { latitude, longitude };
+}
+
+function buildVisibleTiles(topLeftWorldX: number, topLeftWorldY: number, zoom: number, mapSize: number) {
+  const scale = 2 ** zoom;
+  const startTileX = Math.floor(topLeftWorldX / 256);
+  const startTileY = Math.floor(topLeftWorldY / 256);
+  const endTileX = Math.floor((topLeftWorldX + mapSize) / 256);
+  const endTileY = Math.floor((topLeftWorldY + mapSize) / 256);
+  const tiles: Array<{ x: number; y: number; zoom: number; left: number; top: number }> = [];
+
+  for (let tileY = startTileY; tileY <= endTileY; tileY += 1) {
+    if (tileY < 0 || tileY >= scale) {
+      continue;
+    }
+
+    for (let tileX = startTileX; tileX <= endTileX; tileX += 1) {
+      const wrappedTileX = ((tileX % scale) + scale) % scale;
+      tiles.push({
+        x: wrappedTileX,
+        y: tileY,
+        zoom,
+        left: tileX * 256 - topLeftWorldX,
+        top: tileY * 256 - topLeftWorldY
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function getPointerDistance(firstPointer: { x: number; y: number }, secondPointer: { x: number; y: number }) {
+  return Math.hypot(firstPointer.x - secondPointer.x, firstPointer.y - secondPointer.y);
+}
+
+function clampZoom(value: number) {
+  return Math.max(7, Math.min(17, value));
 }
 
 function clampLatitude(value: number) {
