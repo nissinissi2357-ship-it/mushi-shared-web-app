@@ -11,7 +11,11 @@ export async function GET() {
       return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
     }
 
-    return NextResponse.json(viewer);
+    return NextResponse.json(viewer, {
+      headers: {
+        "Cache-Control": "no-store"
+      }
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "最新データの取得に失敗しました。" },

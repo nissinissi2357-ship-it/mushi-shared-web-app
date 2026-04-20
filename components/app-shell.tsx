@@ -206,6 +206,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   async function refreshMembers() {
     const response = await fetch("/api/members", {
       method: "GET",
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json"
       }
@@ -223,6 +224,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   async function refreshViewerState() {
     const response = await fetch("/api/viewer", {
       method: "GET",
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json"
       }
