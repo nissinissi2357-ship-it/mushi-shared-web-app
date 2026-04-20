@@ -71,6 +71,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id);
   const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
 
+  async function refreshViewerState() {
+    const response = await fetch("/api/viewer", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+
+    const payload = (await response.json()) as LoginResult | { error?: string };
+    if (!response.ok || !("member" in payload)) {
+      throw new Error("error" in payload ? payload.error : "最新データの取得に失敗しました。");
+    }
+
+    setCurrentMember(payload.member);
+    setSelectedMemberId(payload.member.id);
+    setLogs(payload.logs);
+    setSummaries(payload.summaries);
+
+    return payload;
+  }
+
   async function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -137,10 +158,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         throw new Error("error" in payload ? payload.error : "ログインに失敗しました。");
       }
 
-      setCurrentMember(payload.member);
-      setSelectedMemberId(payload.member.id);
-      setLogs(payload.logs);
-      setSummaries(payload.summaries);
+      await refreshViewerState();
       setLoginPasscode("");
       setStatusMessage(`${payload.member.displayName} さんでログインしました。`);
       setActiveTab("home");
@@ -212,16 +230,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     if (!response.ok || !payload.log) {
       throw new Error(payload.error || "観察ログの保存に失敗しました。");
     }
-
-    const nextLogs = [payload.log, ...logs];
-    const nextSummaries = canViewRanking
-      ? rebuildSummaries(members, nextLogs)
-      : currentMember
-        ? rebuildSummaries([currentMember], nextLogs)
-        : summaries;
-
-    setLogs(nextLogs);
-    setSummaries(nextSummaries);
+    await refreshViewerState();
     setDraft(getDefaultDraft());
     setLinePaste("");
     setParseStatus("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
@@ -597,30 +606,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       ) : null}
     </div>
   );
-}
-
-function rebuildSummaries(allMembers: Member[], allLogs: ObservationLog[]) {
-  return allMembers
-    .map((member) => {
-      const memberLogs = allLogs.filter((log) => log.memberId === member.id);
-      const sortedLogs = [...memberLogs].sort((left, right) => right.observedAt.localeCompare(left.observedAt));
-
-      return {
-        memberId: member.id,
-        displayName: member.displayName,
-        role: member.role,
-        totalPoints: memberLogs.reduce((sum, log) => sum + log.points, 0),
-        recordCount: memberLogs.length,
-        latestObservedAt: sortedLogs[0]?.observedAt ?? null
-      };
-    })
-    .sort((left, right) => {
-      if (right.totalPoints !== left.totalPoints) {
-        return right.totalPoints - left.totalPoints;
-      }
-
-      return right.recordCount - left.recordCount;
-    });
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {
