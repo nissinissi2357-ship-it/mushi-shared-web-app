@@ -1275,11 +1275,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </label>
                 <p className="helper-text">{draftPhotoMessage}</p>
 
-                <label>
-                  図鑑PDF
-                  <input type="file" accept="application/pdf" disabled />
-                </label>
-                <p className="helper-text">写真とPDFの共有保存は次の段階で対応予定です。</p>
+                <p className="helper-text">写真の共有保存は次の段階で対応予定です。</p>
 
                 <div className="form-actions full-width">
                   <button type="submit" className="primary-button" disabled={isSaving}>
