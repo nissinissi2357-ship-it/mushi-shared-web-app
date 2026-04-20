@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { buildSummaries } from "@/lib/mock-data";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
+import { parseCaptainMessage } from "@/lib/line-parser";
 import type {
   InitialViewerState,
   LoginResult,
@@ -57,8 +57,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [currentMember, setCurrentMember] = useState<Member | null>(initialViewer?.member ?? null);
   const [logs, setLogs] = useState<ObservationLog[]>(initialViewer?.logs ?? []);
   const [summaries, setSummaries] = useState<MemberSummary[]>(initialViewer?.summaries ?? []);
-  const [draftPhotoMessage, setDraftPhotoMessage] = useState("写真の自動保存は長辺1600px、JPEG品質0.75を目安に圧縮します。");
+  const [draftPhotoMessage, setDraftPhotoMessage] = useState("写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。");
   const [draft, setDraft] = useState<DraftObservation>(getDefaultDraft);
+  const [linePaste, setLinePaste] = useState("");
+  const [parseStatus, setParseStatus] = useState("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
   const [registerDraft, setRegisterDraft] = useState<RegisterDraft>({ displayName: "", passcode: "" });
   const [statusMessage, setStatusMessage] = useState<string | null>(warning);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,7 +74,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   async function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
-      setDraftPhotoMessage("写真の自動保存は長辺1600px、JPEG品質0.75を目安に圧縮します。");
+      setDraftPhotoMessage("写真は長辺1600px、JPEG品質0.75を目安に縮小してから保存します。");
       return;
     }
 
@@ -80,6 +82,33 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const beforeKb = Math.round(file.size / 1024);
     const afterKb = Math.round(resized.size / 1024);
     setDraftPhotoMessage(`${file.name} を圧縮予定です。${beforeKb}KB → ${afterKb}KB`);
+  }
+
+  function applyParsedToDraft(rawText: string) {
+    const parsed = parseCaptainMessage(rawText);
+
+    setDraft((current) => ({
+      observedAt: parsed.observedAt || current.observedAt,
+      location: parsed.location || current.location,
+      species: parsed.species || current.species,
+      points: parsed.points !== null ? String(parsed.points) : current.points,
+      scoringMemo: parsed.scoringMemo || current.scoringMemo
+    }));
+
+    const found = [
+      parsed.species ? `種名: ${parsed.species}` : "",
+      parsed.points !== null ? `ポイント: ${parsed.points}P` : "",
+      parsed.location ? `場所: ${parsed.location}` : "",
+      parsed.observedAt ? `日時: ${parsed.observedAt}` : ""
+    ].filter(Boolean);
+
+    if (found.length === 0) {
+      setParseStatus("読み取れる項目が見つかりませんでした。本文を少し長めに貼ると精度が上がります。");
+    } else {
+      setParseStatus(`自動入力しました。${found.join(" / ")}`);
+    }
+
+    return parsed;
   }
 
   async function handleLogin() {
@@ -153,8 +182,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         throw new Error(payload.error || "隊員登録に失敗しました。");
       }
 
-      const nextMembers = [...members, payload.member];
-      setMembers(nextMembers);
+      setMembers((current) => [...current, payload.member as Member]);
       setSelectedMemberId(payload.member.id);
       setRegisterDraft({ displayName: "", passcode: "" });
       setStatusMessage(`${payload.member.displayName} さんを追加しました。続けてログインできます。`);
@@ -163,6 +191,42 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     } finally {
       setIsRegistering(false);
     }
+  }
+
+  async function saveObservation(nextDraft: DraftObservation) {
+    const response = await fetch("/api/observations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        observedAt: new Date(nextDraft.observedAt).toISOString(),
+        location: nextDraft.location,
+        species: nextDraft.species,
+        points: Number(nextDraft.points),
+        scoringMemo: nextDraft.scoringMemo
+      })
+    });
+
+    const payload = (await response.json()) as { log?: ObservationLog; error?: string };
+    if (!response.ok || !payload.log) {
+      throw new Error(payload.error || "観察ログの保存に失敗しました。");
+    }
+
+    const nextLogs = [payload.log, ...logs];
+    const nextSummaries = canViewRanking
+      ? rebuildSummaries(members, nextLogs)
+      : currentMember
+        ? rebuildSummaries([currentMember], nextLogs)
+        : summaries;
+
+    setLogs(nextLogs);
+    setSummaries(nextSummaries);
+    setDraft(getDefaultDraft());
+    setLinePaste("");
+    setParseStatus("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
+    setStatusMessage("観察ログを保存しました。");
+    setActiveTab("logs");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -176,33 +240,52 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setStatusMessage(null);
 
     try {
-      const response = await fetch("/api/observations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          observedAt: new Date(draft.observedAt).toISOString(),
-          location: draft.location,
-          species: draft.species,
-          points: Number(draft.points),
-          scoringMemo: draft.scoringMemo
-        })
-      });
+      await saveObservation(draft);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "観察ログの保存に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
-      const payload = (await response.json()) as { log?: ObservationLog; error?: string };
-      if (!response.ok || !payload.log) {
-        throw new Error(payload.error || "観察ログの保存に失敗しました。");
-      }
+  async function handleQuickRegister() {
+    if (!currentMember) {
+      setStatusMessage("先にログインしてください。");
+      return;
+    }
 
-      const nextLogs = [payload.log, ...logs];
-      setLogs(nextLogs);
-      setSummaries(
-        canViewRanking ? buildSummaries(members, nextLogs) : buildSummaries([currentMember], nextLogs)
-      );
-      setDraft(getDefaultDraft());
-      setStatusMessage("観察ログを保存しました。");
-      setActiveTab("logs");
+    const rawText = linePaste.trim();
+    if (!rawText) {
+      setParseStatus("まず隊長メッセージを貼り付けてください。");
+      return;
+    }
+
+    const parsed = applyParsedToDraft(rawText);
+    const nextDraft: DraftObservation = {
+      observedAt: parsed.observedAt || draft.observedAt,
+      location: parsed.location || draft.location,
+      species: parsed.species || draft.species,
+      points: parsed.points !== null ? String(parsed.points) : draft.points,
+      scoringMemo: parsed.scoringMemo || draft.scoringMemo
+    };
+
+    const missing = [
+      !nextDraft.species ? "種名" : "",
+      !nextDraft.location ? "場所" : "",
+      !nextDraft.points ? "ポイント" : ""
+    ].filter(Boolean);
+
+    if (missing.length > 0) {
+      setParseStatus(`まだ ${missing.join("・")} が足りません。必要なところだけ手入力してください。`);
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusMessage(null);
+
+    try {
+      await saveObservation(nextDraft);
+      setDraft(nextDraft);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "観察ログの保存に失敗しました。");
     } finally {
@@ -216,7 +299,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         <p className="eyebrow">Shared Edition</p>
         <h1>ムシムシ探検隊ログ</h1>
         <p className="hero-copy">
-          みんなで使う共有版です。ログインした隊員だけが自分のホームと観察ログを見られます。
+          ログインした隊員だけが自分のホームと観察ログを見られる共有版です。
         </p>
 
         <section className="session-panel">
@@ -236,9 +319,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
                 {members.map((member) => (
                   <option key={member.id} value={member.id}>
-                    {member.displayName}
-                    {" "}
-                    ({member.role === "captain" ? "隊長" : member.role === "admin" ? "管理者" : "隊員"})
+                    {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "管理者" : "隊員"})
                   </option>
                 ))}
               </select>
@@ -375,6 +456,38 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
 
               <form className="record-form" onSubmit={handleSubmit}>
+                <label className="full-width">
+                  LINE貼り付け
+                  <textarea
+                    rows={7}
+                    placeholder="隊長メッセージをここに貼り付けてください"
+                    value={linePaste}
+                    onChange={(event) => setLinePaste(event.target.value)}
+                  />
+                </label>
+
+                <div className="form-actions full-width">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      const rawText = linePaste.trim();
+                      if (!rawText) {
+                        setParseStatus("まず隊長メッセージを貼り付けてください。");
+                        return;
+                      }
+                      applyParsedToDraft(rawText);
+                    }}
+                  >
+                    貼り付けから自動入力
+                  </button>
+                  <button type="button" className="primary-button" onClick={handleQuickRegister} disabled={isSaving}>
+                    {isSaving ? "保存中..." : "貼り付けだけで保存"}
+                  </button>
+                </div>
+
+                <p className="helper-text full-width">{parseStatus}</p>
+
                 <label>
                   観察日時
                   <input
@@ -420,7 +533,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 </label>
 
-                <label>
+                <label className="full-width">
                   隊長メモ
                   <textarea
                     rows={4}
@@ -442,11 +555,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </label>
                 <p className="helper-text">写真とPDFの共有保存は次の段階でつなぎます。</p>
 
-                <div className="form-actions">
+                <div className="form-actions full-width">
                   <button type="submit" className="primary-button" disabled={isSaving}>
                     {isSaving ? "保存中..." : "保存する"}
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => setDraft(getDefaultDraft())} disabled={isSaving}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setDraft(getDefaultDraft());
+                      setLinePaste("");
+                      setParseStatus("隊長メッセージを貼ると、日時・場所・種名・ポイントを自動入力できます。");
+                    }}
+                    disabled={isSaving}
+                  >
                     入力をクリア
                   </button>
                 </div>
@@ -475,6 +597,30 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       ) : null}
     </div>
   );
+}
+
+function rebuildSummaries(allMembers: Member[], allLogs: ObservationLog[]) {
+  return allMembers
+    .map((member) => {
+      const memberLogs = allLogs.filter((log) => log.memberId === member.id);
+      const sortedLogs = [...memberLogs].sort((left, right) => right.observedAt.localeCompare(left.observedAt));
+
+      return {
+        memberId: member.id,
+        displayName: member.displayName,
+        role: member.role,
+        totalPoints: memberLogs.reduce((sum, log) => sum + log.points, 0),
+        recordCount: memberLogs.length,
+        latestObservedAt: sortedLogs[0]?.observedAt ?? null
+      };
+    })
+    .sort((left, right) => {
+      if (right.totalPoints !== left.totalPoints) {
+        return right.totalPoints - left.totalPoints;
+      }
+
+      return right.recordCount - left.recordCount;
+    });
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

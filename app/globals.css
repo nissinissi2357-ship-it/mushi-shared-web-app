@@ -108,6 +108,10 @@ select {
   flex-wrap: wrap;
 }
 
+.full-width {
+  grid-column: 1 / -1;
+}
+
 .registration-box {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
