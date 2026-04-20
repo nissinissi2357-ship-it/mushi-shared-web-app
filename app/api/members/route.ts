@@ -1,5 +1,17 @@
 import { NextResponse } from "next/server";
-import { registerMember } from "@/lib/data";
+import { createMember, listMembers } from "@/lib/data";
+
+export async function GET() {
+  try {
+    const members = await listMembers();
+    return NextResponse.json({ members });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "隊員一覧の取得に失敗しました。" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -7,7 +19,7 @@ export async function POST(request: Request) {
     const displayName = String(body.displayName || "").trim();
     const passcode = String(body.passcode || "").trim();
 
-    const member = await registerMember(displayName, passcode, "member");
+    const member = await createMember(displayName, passcode, "member");
     return NextResponse.json({ member });
   } catch (error) {
     return NextResponse.json(

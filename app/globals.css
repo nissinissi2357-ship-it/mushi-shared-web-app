@@ -47,7 +47,8 @@ select {
 .panel,
 .summary-card,
 .record-card,
-.auth-panel {
+.auth-panel,
+.admin-member-card {
   backdrop-filter: blur(18px);
   background: var(--panel);
   border: 1px solid rgba(31, 42, 31, 0.08);
@@ -59,7 +60,8 @@ select {
   padding: 28px;
 }
 
-.hero-top {
+.hero-top,
+.auth-panel-head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -109,33 +111,39 @@ select {
 }
 
 .session-panel.auth-panel {
-  width: min(920px, 100%);
+  width: min(960px, 100%);
   margin-top: 0;
   padding: 20px;
   border-radius: 24px;
   background: rgba(255, 251, 243, 0.96);
+  max-height: calc(100vh - 96px);
+  overflow: auto;
 }
 
-.auth-panel-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: start;
+.auth-section + .auth-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(31, 42, 31, 0.12);
 }
 
 .session-grid,
-.record-form {
+.record-form,
+.account-form,
+.admin-create-form {
   display: grid;
   gap: 14px;
 }
 
-.session-grid {
+.session-grid,
+.account-form,
+.admin-create-form {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 14px;
 }
 
 .session-actions,
-.form-actions {
+.form-actions,
+.admin-actions {
   display: flex;
   gap: 10px;
   align-items: end;
@@ -151,8 +159,6 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px dashed rgba(31, 42, 31, 0.12);
 }
 
 .hero-stats {
@@ -250,13 +256,15 @@ select {
 }
 
 .record-list,
-.ranking-list {
+.ranking-list,
+.admin-member-list {
   display: grid;
   gap: 14px;
 }
 
 .ranking-item,
-.record-card {
+.record-card,
+.admin-member-card {
   border-radius: 20px;
   padding: 18px;
   background: rgba(255, 255, 255, 0.72);
@@ -268,6 +276,11 @@ select {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
+}
+
+.admin-member-card {
+  display: grid;
+  gap: 14px;
 }
 
 .ranking-rank,
@@ -384,7 +397,9 @@ select:disabled {
 
   .hero-stats,
   .session-grid,
-  .registration-box {
+  .registration-box,
+  .account-form,
+  .admin-create-form {
     grid-template-columns: 1fr;
   }
 

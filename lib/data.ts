@@ -22,25 +22,12 @@ type SessionMember = {
 
 export async function getAppData(): Promise<DataResult> {
   try {
-    const supabase = createAdminClient();
-    const { data: memberRows, error } = await supabase
-      .from("club_members")
-      .select("id, display_name, role")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      throw error;
-    }
-
-    const members = (memberRows ?? []).map(mapMemberRow);
+    const members = await listMembers();
 
     return {
       members,
       source: "supabase",
-      warning:
-        members.length === 0
-          ? "まだ隊員が登録されていません。画面から追加するか、seed.sql を流して初期データを入れてください。"
-          : null
+      warning: members.length === 0 ? "まだ隊員が登録されていません。" : null
     };
   } catch (error) {
     return {
@@ -52,6 +39,20 @@ export async function getAppData(): Promise<DataResult> {
           : "Supabase に接続できなかったため、サンプル表示に切り替えています。"
     };
   }
+}
+
+export async function listMembers(): Promise<Member[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("club_members")
+    .select("id, display_name, role")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map(mapMemberRow);
 }
 
 export async function getViewerFromSession(session: SessionMember | null): Promise<LoginResult | null> {
@@ -83,7 +84,7 @@ export async function loginMember(displayName: string, passcode: string): Promis
     const supabase = createAdminClient();
     const hashedPasscode = hashPasscode(normalizedPasscode);
 
-    const { data: memberRow, error } = await supabase
+    const { data, error } = await supabase
       .from("club_members")
       .select("id, display_name, role, passcode_hash")
       .eq("display_name", normalizedName)
@@ -93,15 +94,15 @@ export async function loginMember(displayName: string, passcode: string): Promis
       throw error;
     }
 
-    if (!memberRow) {
+    if (!data) {
       throw new Error("その隊員名は見つかりませんでした。");
     }
 
-    if (!memberRow.passcode_hash || memberRow.passcode_hash !== hashedPasscode) {
+    if (!data.passcode_hash || data.passcode_hash !== hashedPasscode) {
       throw new Error("合言葉が違います。");
     }
 
-    return buildViewer(mapMemberRow(memberRow));
+    return buildViewer(mapMemberRow(data));
   } catch (error) {
     const fallbackMember = fallbackMembers.find((member) => member.displayName === normalizedName);
     if (!fallbackMember || normalizedPasscode !== "1234") {
@@ -122,7 +123,7 @@ export async function loginMember(displayName: string, passcode: string): Promis
   }
 }
 
-export async function registerMember(
+export async function createMember(
   displayName: string,
   passcode: string,
   role: MemberRole = "member"
@@ -158,6 +159,109 @@ export async function registerMember(
   }
 
   return mapMemberRow(data);
+}
+
+export async function updateOwnAccount(
+  memberId: string,
+  input: { displayName?: string; passcode?: string }
+): Promise<Member> {
+  const updates: { display_name?: string; passcode_hash?: string } = {};
+  const nextDisplayName = input.displayName?.trim() || "";
+  const nextPasscode = input.passcode?.trim() || "";
+
+  if (!nextDisplayName && !nextPasscode) {
+    throw new Error("変更したい項目を入力してください。");
+  }
+
+  if (nextDisplayName) {
+    updates.display_name = nextDisplayName;
+  }
+
+  if (nextPasscode) {
+    if (nextPasscode.length < 4) {
+      throw new Error("合言葉は4文字以上にしてください。");
+    }
+
+    updates.passcode_hash = hashPasscode(nextPasscode);
+  }
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("club_members")
+    .update(updates)
+    .eq("id", memberId)
+    .select("id, display_name, role")
+    .single();
+
+  if (error) {
+    if ("code" in error && error.code === "23505") {
+      throw new Error("その隊員名はすでに使われています。");
+    }
+
+    throw error;
+  }
+
+  return mapMemberRow(data);
+}
+
+export async function adminUpdateMemberRole(
+  actorMemberId: string,
+  targetMemberId: string,
+  role: MemberRole
+): Promise<Member> {
+  if (actorMemberId === targetMemberId) {
+    throw new Error("自分自身の権限変更はできません。");
+  }
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("club_members")
+    .update({ role })
+    .eq("id", targetMemberId)
+    .select("id, display_name, role")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapMemberRow(data);
+}
+
+export async function adminResetMemberPasscode(targetMemberId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("club_members")
+    .update({ passcode_hash: hashPasscode("0000") })
+    .eq("id", targetMemberId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function adminDeleteMember(actorMemberId: string, targetMemberId: string): Promise<void> {
+  if (actorMemberId === targetMemberId) {
+    throw new Error("自分自身は削除できません。");
+  }
+
+  const target = await getMemberById(targetMemberId);
+  if (!target) {
+    throw new Error("削除対象の隊員が見つかりません。");
+  }
+
+  if (target.role === "admin") {
+    const adminCount = await countAdmins();
+    if (adminCount <= 1) {
+      throw new Error("最後の Admin は削除できません。");
+    }
+  }
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("club_members").delete().eq("id", targetMemberId);
+  if (error) {
+    throw error;
+  }
 }
 
 export async function insertObservation(input: ObservationInsertInput, member: Member): Promise<ObservationLog> {
@@ -248,6 +352,20 @@ async function getAllSummaries() {
   }
 
   return buildSummaries((memberRows ?? []).map(mapMemberRow), (logRows ?? []).map(mapLogRow));
+}
+
+async function countAdmins() {
+  const supabase = createAdminClient();
+  const { count, error } = await supabase
+    .from("club_members")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "admin");
+
+  if (error) {
+    throw error;
+  }
+
+  return count ?? 0;
 }
 
 function mapMemberRow(row: { id: string; display_name: string; role: MemberRole }): Member {

@@ -8,6 +8,7 @@ import type {
   InitialViewerState,
   LoginResult,
   Member,
+  MemberRole,
   MemberSummary,
   ObservationLog,
   TabId
@@ -39,6 +40,12 @@ type RegisterDraft = {
   passcode: string;
 };
 
+type AdminCreateDraft = {
+  displayName: string;
+  passcode: string;
+  role: MemberRole;
+};
+
 function getDefaultDraft(): DraftObservation {
   return {
     observedAt: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
@@ -47,6 +54,10 @@ function getDefaultDraft(): DraftObservation {
     points: "",
     scoringMemo: ""
   };
+}
+
+function buildRoleDrafts(members: Member[]) {
+  return Object.fromEntries(members.map((member) => [member.id, member.role])) as Record<string, MemberRole>;
 }
 
 const defaultParseStatus =
@@ -67,16 +78,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [linePaste, setLinePaste] = useState("");
   const [parseStatus, setParseStatus] = useState(defaultParseStatus);
   const [registerDraft, setRegisterDraft] = useState<RegisterDraft>({ displayName: "", passcode: "" });
+  const [accountDisplayName, setAccountDisplayName] = useState(initialViewer?.member.displayName ?? "");
+  const [accountPasscode, setAccountPasscode] = useState("");
+  const [adminCreateDraft, setAdminCreateDraft] = useState<AdminCreateDraft>({
+    displayName: "",
+    passcode: "",
+    role: "member"
+  });
+  const [adminRoleDrafts, setAdminRoleDrafts] = useState<Record<string, MemberRole>>(buildRoleDrafts(initialMembers));
   const [statusMessage, setStatusMessage] = useState<string | null>(warning);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isAccountSaving, setIsAccountSaving] = useState(false);
+  const [isAdminSaving, setIsAdminSaving] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id);
   const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
+  const isAdmin = currentMember?.role === "admin";
   const filteredLogs =
     canViewRanking && logMemberFilterId
       ? logs.filter((log) => log.memberId === logMemberFilterId)
@@ -85,6 +107,47 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && logMemberFilterId
       ? members.find((member) => member.id === logMemberFilterId)?.displayName || null
       : null;
+
+  function applyMembers(nextMembers: Member[]) {
+    setMembers(nextMembers);
+    setAdminRoleDrafts(buildRoleDrafts(nextMembers));
+    setSelectedMemberId((current) =>
+      nextMembers.some((member) => member.id === current) ? current : (nextMembers[0]?.id ?? "")
+    );
+    setLogMemberFilterId((current) =>
+      current && nextMembers.some((member) => member.id === current) ? current : null
+    );
+  }
+
+  function applyViewerPayload(payload: LoginResult) {
+    setCurrentMember(payload.member);
+    setSelectedMemberId(payload.member.id);
+    setLogs(payload.logs);
+    setSummaries(payload.summaries);
+    setAccountDisplayName(payload.member.displayName);
+    setAccountPasscode("");
+
+    if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
+      setLogMemberFilterId(null);
+    }
+  }
+
+  async function refreshMembers() {
+    const response = await fetch("/api/members", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+
+    const payload = (await response.json()) as { members?: Member[]; error?: string };
+    if (!response.ok || !payload.members) {
+      throw new Error(payload.error || "隊員一覧の取得に失敗しました。");
+    }
+
+    applyMembers(payload.members);
+    return payload.members;
+  }
 
   async function refreshViewerState() {
     const response = await fetch("/api/viewer", {
@@ -99,16 +162,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       throw new Error("error" in payload ? payload.error : "最新データの取得に失敗しました。");
     }
 
-    setCurrentMember(payload.member);
-    setSelectedMemberId(payload.member.id);
-    setLogs(payload.logs);
-    setSummaries(payload.summaries);
-
-    if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
-      setLogMemberFilterId(null);
-    }
-
+    applyViewerPayload(payload);
     return payload;
+  }
+
+  async function refreshEverything() {
+    await Promise.all([refreshMembers(), refreshViewerState()]);
   }
 
   async function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
@@ -177,7 +236,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         throw new Error("error" in payload ? payload.error : "ログインに失敗しました。");
       }
 
-      await refreshViewerState();
+      await refreshEverything();
       setLoginPasscode("");
       setIsAuthPanelOpen(false);
       setStatusMessage(`${payload.member.displayName} さんでログインしました。`);
@@ -198,6 +257,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setSummaries([]);
       setLogMemberFilterId(null);
       setLoginPasscode("");
+      setAccountDisplayName("");
+      setAccountPasscode("");
       setIsAuthPanelOpen(false);
       setStatusMessage("ログアウトしました。");
     }
@@ -222,7 +283,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         throw new Error(payload.error || "隊員登録に失敗しました。");
       }
 
-      setMembers((current) => [...current, payload.member as Member]);
+      await refreshMembers();
       setSelectedMemberId(payload.member.id);
       setRegisterDraft({ displayName: "", passcode: "" });
       setStatusMessage(`${payload.member.displayName} さんを追加しました。続けてログインできます。`);
@@ -230,6 +291,157 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setStatusMessage(error instanceof Error ? error.message : "隊員登録に失敗しました。");
     } finally {
       setIsRegistering(false);
+    }
+  }
+
+  async function handleAccountUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentMember) {
+      return;
+    }
+
+    setIsAccountSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch("/api/account", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          displayName: accountDisplayName,
+          passcode: accountPasscode
+        })
+      });
+
+      const payload = (await response.json()) as { member?: Member; error?: string };
+      if (!response.ok || !payload.member) {
+        throw new Error(payload.error || "アカウント更新に失敗しました。");
+      }
+
+      await refreshEverything();
+      setStatusMessage("名前と合言葉を更新しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "アカウント更新に失敗しました。");
+    } finally {
+      setIsAccountSaving(false);
+    }
+  }
+
+  async function handleAdminCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/members", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(adminCreateDraft)
+      });
+
+      const payload = (await response.json()) as { member?: Member; error?: string };
+      if (!response.ok || !payload.member) {
+        throw new Error(payload.error || "Admin アカウント作成に失敗しました。");
+      }
+
+      await refreshEverything();
+      setAdminCreateDraft({ displayName: "", passcode: "", role: "member" });
+      setStatusMessage(`${payload.member.displayName} さんのアカウントを作成しました。`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Admin アカウント作成に失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
+    }
+  }
+
+  async function handleAdminRoleUpdate(memberId: string) {
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/members/${memberId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "update-role",
+          role: adminRoleDrafts[memberId]
+        })
+      });
+
+      const payload = (await response.json()) as { member?: Member; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "権限更新に失敗しました。");
+      }
+
+      await refreshEverything();
+      setStatusMessage("権限を更新しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "権限更新に失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
+    }
+  }
+
+  async function handleAdminResetPasscode(memberId: string) {
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/members/${memberId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "reset-passcode"
+        })
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "合言葉リセットに失敗しました。");
+      }
+
+      await refreshEverything();
+      setStatusMessage("合言葉を 0000 にリセットしました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "合言葉リセットに失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
+    }
+  }
+
+  async function handleAdminDelete(memberId: string, displayName: string) {
+    const confirmed = window.confirm(`${displayName} さんのアカウントを削除しますか？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch(`/api/admin/members/${memberId}`, {
+        method: "DELETE"
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "削除に失敗しました。");
+      }
+
+      await refreshEverything();
+      setStatusMessage("アカウントを削除しました。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "削除に失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
     }
   }
 
@@ -366,7 +578,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               currentMember?.role === "captain"
                 ? "隊長"
                 : currentMember?.role === "admin"
-                  ? "管理者"
+                  ? "Admin"
                   : currentMember
                     ? "隊員"
                     : "未ログイン"
@@ -380,80 +592,227 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           <section className="session-panel auth-panel" onClick={(event) => event.stopPropagation()}>
             <div className="auth-panel-head">
               <div>
-                <p className="section-label">Member</p>
-                <h2>{currentMember ? "アカウント" : "ログイン"}</h2>
+                <p className="section-label">Auth</p>
+                <h2>{currentMember ? "アカウント設定" : "ログイン"}</h2>
               </div>
               <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
                 閉じる
               </button>
             </div>
 
-            <div className="session-grid">
-              <label>
-                ログインする隊員
-                <select
-                  value={selectedMemberId}
-                  onChange={(event) => setSelectedMemberId(event.target.value)}
-                  disabled={members.length === 0}
-                >
-                  {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
+            <section className="auth-section">
+              <p className="section-label">Login</p>
+              <div className="session-grid">
+                <label>
+                  ログインする隊員
+                  <select
+                    value={selectedMemberId}
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    disabled={members.length === 0}
+                  >
+                    {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  合言葉
+                  <input
+                    type="password"
+                    placeholder="4文字以上"
+                    value={loginPasscode}
+                    onChange={(event) => setLoginPasscode(event.target.value)}
+                  />
+                </label>
+
+                <div className="session-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleLogin}
+                    disabled={isLoggingIn || !selectedMember}
+                  >
+                    {isLoggingIn ? "確認中..." : "ログイン"}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="auth-section">
+              <p className="section-label">Join</p>
+              <form className="registration-box" onSubmit={handleRegister}>
+                <label>
+                  新しい隊員名
+                  <input
+                    type="text"
+                    placeholder="例: たろう"
+                    value={registerDraft.displayName}
+                    onChange={(event) => setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))}
+                  />
+                </label>
+
+                <label>
+                  合言葉
+                  <input
+                    type="password"
+                    placeholder="4文字以上"
+                    value={registerDraft.passcode}
+                    onChange={(event) => setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))}
+                  />
+                </label>
+
+                <div className="session-actions">
+                  <button type="submit" className="secondary-button" disabled={isRegistering}>
+                    {isRegistering ? "登録中..." : "隊員を登録"}
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            {currentMember ? (
+              <section className="auth-section">
+                <p className="section-label">My Account</p>
+                <form className="account-form" onSubmit={handleAccountUpdate}>
+                  <label>
+                    表示名
+                    <input
+                      type="text"
+                      value={accountDisplayName}
+                      onChange={(event) => setAccountDisplayName(event.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    新しい合言葉
+                    <input
+                      type="password"
+                      placeholder="変更しないなら空欄"
+                      value={accountPasscode}
+                      onChange={(event) => setAccountPasscode(event.target.value)}
+                    />
+                  </label>
+
+                  <div className="session-actions">
+                    <button type="submit" className="secondary-button" disabled={isAccountSaving}>
+                      {isAccountSaving ? "更新中..." : "名前と合言葉を変更"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            ) : null}
+
+            {isAdmin ? (
+              <section className="auth-section admin-section">
+                <p className="section-label">Admin</p>
+
+                <form className="admin-create-form" onSubmit={handleAdminCreate}>
+                  <label>
+                    新規アカウント名
+                    <input
+                      type="text"
+                      value={adminCreateDraft.displayName}
+                      onChange={(event) =>
+                        setAdminCreateDraft((current) => ({ ...current, displayName: event.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    初期合言葉
+                    <input
+                      type="password"
+                      value={adminCreateDraft.passcode}
+                      onChange={(event) =>
+                        setAdminCreateDraft((current) => ({ ...current, passcode: event.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    権限
+                    <select
+                      value={adminCreateDraft.role}
+                      onChange={(event) =>
+                        setAdminCreateDraft((current) => ({
+                          ...current,
+                          role: event.target.value as MemberRole
+                        }))
+                      }
+                    >
+                      <option value="member">隊員</option>
+                      <option value="captain">隊長</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </label>
+
+                  <div className="session-actions">
+                    <button type="submit" className="primary-button" disabled={isAdminSaving}>
+                      {isAdminSaving ? "作成中..." : "アカウントを作成"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="admin-member-list">
                   {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "管理者" : "隊員"})
-                    </option>
+                    <article key={member.id} className="admin-member-card">
+                      <div>
+                        <p className="ranking-name">{member.displayName}</p>
+                        <p className="ranking-meta">{member.id === currentMember.id ? "現在ログイン中" : "管理対象"}</p>
+                      </div>
+
+                      <label>
+                        権限
+                        <select
+                          value={adminRoleDrafts[member.id] ?? member.role}
+                          onChange={(event) =>
+                            setAdminRoleDrafts((current) => ({
+                              ...current,
+                              [member.id]: event.target.value as MemberRole
+                            }))
+                          }
+                          disabled={member.id === currentMember.id}
+                        >
+                          <option value="member">隊員</option>
+                          <option value="captain">隊長</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </label>
+
+                      <div className="admin-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleAdminRoleUpdate(member.id)}
+                          disabled={isAdminSaving || member.id === currentMember.id}
+                        >
+                          権限を更新
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleAdminResetPasscode(member.id)}
+                          disabled={isAdminSaving}
+                        >
+                          合言葉を0000に
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => handleAdminDelete(member.id, member.displayName)}
+                          disabled={isAdminSaving || member.id === currentMember.id}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </article>
                   ))}
-                </select>
-              </label>
-
-              <label>
-                合言葉
-                <input
-                  type="password"
-                  placeholder="4文字以上"
-                  value={loginPasscode}
-                  onChange={(event) => setLoginPasscode(event.target.value)}
-                />
-              </label>
-
-              <div className="session-actions">
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={handleLogin}
-                  disabled={isLoggingIn || !selectedMember}
-                >
-                  {isLoggingIn ? "確認中..." : "ログイン"}
-                </button>
-              </div>
-            </div>
-
-            <form className="registration-box" onSubmit={handleRegister}>
-              <label>
-                新しい隊員名
-                <input
-                  type="text"
-                  placeholder="例: たろう"
-                  value={registerDraft.displayName}
-                  onChange={(event) => setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))}
-                />
-              </label>
-
-              <label>
-                合言葉
-                <input
-                  type="password"
-                  placeholder="4文字以上"
-                  value={registerDraft.passcode}
-                  onChange={(event) => setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))}
-                />
-              </label>
-
-              <div className="session-actions">
-                <button type="submit" className="secondary-button" disabled={isRegistering}>
-                  {isRegistering ? "登録中..." : "隊員を登録"}
-                </button>
-              </div>
-            </form>
+                </div>
+              </section>
+            ) : null}
 
             <p className="helper-text">データソース: {source === "supabase" ? "Supabase" : "フォールバック表示"}</p>
           </section>
@@ -486,7 +845,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               <div className="home-copy">
                 <p>ログイン中の隊員の集計だけを表示しています。</p>
-                <p>ランキングは隊長と管理者だけが見える仕様です。</p>
+                <p>ランキングは隊長と Admin だけが見える仕様です。</p>
               </div>
 
               {canViewRanking ? (
@@ -505,7 +864,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                       <div>
                         <p className="ranking-name">{summary.displayName}</p>
                         <p className="ranking-meta">
-                          {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "管理者" : "隊員"} / {summary.recordCount}件
+                          {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / {summary.recordCount}件
                         </p>
                       </div>
                       <div className="ranking-points">{summary.totalPoints}P</div>
@@ -513,7 +872,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   ))}
                 </div>
               ) : (
-                <p className="helper-text">ランキングは隊長または管理者だけが見えます。</p>
+                <p className="helper-text">ランキングは隊長または Admin だけが見えます。</p>
               )}
             </section>
           ) : null}
