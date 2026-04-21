@@ -168,6 +168,10 @@ select {
   margin-top: 22px;
 }
 
+.hero > .hero-stats {
+  display: none;
+}
+
 .summary-card {
   border-radius: 18px;
   padding: 16px;
@@ -369,6 +373,7 @@ select {
 
 .map-field {
   margin-top: -2px;
+  width: 100%;
 }
 
 .coordinate-picker {
@@ -378,6 +383,7 @@ select {
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
+  width: 100%;
 }
 
 .coordinate-picker-head {
@@ -437,7 +443,7 @@ select {
 .map-canvas {
   position: relative;
   width: 100%;
-  max-width: 320px;
+  max-width: none;
   aspect-ratio: 1;
   overflow: hidden;
   border-radius: 18px;

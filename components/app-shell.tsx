@@ -1680,6 +1680,7 @@ function MapCoordinatePicker({
   const defaultCenter = parseCoordinates(latitude, longitude) ?? { latitude: 34.3963, longitude: 132.4596 };
   const [center, setCenter] = useState(defaultCenter);
   const [zoom, setZoom] = useState(11);
+  const [viewportSize, setViewportSize] = useState(320);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const gestureRef = useRef<{
@@ -1699,7 +1700,7 @@ function MapCoordinatePicker({
     pinchStartDistance: 0,
     dragged: false
   });
-  const mapSize = 320;
+  const mapSize = viewportSize;
   const centerWorld = latLngToWorldPixels(center.latitude, center.longitude, zoom);
   const topLeftWorld = {
     x: centerWorld.x - mapSize / 2,
@@ -1717,6 +1718,35 @@ function MapCoordinatePicker({
       setCenter(nextCenter);
     }
   }, [latitude, longitude]);
+
+  useEffect(() => {
+    const element = mapRef.current;
+    if (!element) {
+      return;
+    }
+
+    function syncViewportSize() {
+      if (!element) {
+        return;
+      }
+      const nextSize = Math.max(280, Math.round(element.getBoundingClientRect().width));
+      setViewportSize((current) => (current === nextSize ? current : nextSize));
+    }
+
+    syncViewportSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncViewportSize);
+      return () => window.removeEventListener("resize", syncViewportSize);
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncViewportSize();
+    });
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
 
   function updateZoom(nextZoom: number, anchorClientX?: number, anchorClientY?: number) {
     const clampedZoom = clampZoom(nextZoom);
