@@ -60,10 +60,14 @@ export function buildSummaries(
   allLogs: ObservationLog[],
   allPointEntries: PointEntry[]
 ): MemberSummary[] {
+  const summaryYear = new Date().getFullYear();
+
   return allMembers
     .map((member) => {
-      const memberLogs = allLogs.filter((log) => log.memberId === member.id);
-      const memberPointEntries = allPointEntries.filter((entry) => entry.memberId === member.id);
+      const memberLogs = allLogs.filter((log) => log.memberId === member.id && isInYear(log.observedAt, summaryYear));
+      const memberPointEntries = allPointEntries.filter(
+        (entry) => entry.memberId === member.id && isInYear(entry.awardedAt, summaryYear)
+      );
       const sortedLogs = [...memberLogs].sort((left, right) => right.observedAt.localeCompare(left.observedAt));
       const observationPoints = memberLogs.reduce((sum, log) => sum + log.points, 0);
       const extraPoints = memberPointEntries.reduce((sum, entry) => sum + entry.points, 0);
@@ -91,4 +95,8 @@ export function buildSummaries(
 
       return left.displayName.localeCompare(right.displayName, "ja");
     });
+}
+
+function isInYear(value: string, year: number) {
+  return new Date(value).getFullYear() === year;
 }

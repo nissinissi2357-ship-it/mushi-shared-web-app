@@ -176,6 +176,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && pointMemberFilterId
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
+  const summaryYear = new Date().getFullYear();
 
   const monthlyPointSeries = useMemo(() => {
     if (!currentMember) {
