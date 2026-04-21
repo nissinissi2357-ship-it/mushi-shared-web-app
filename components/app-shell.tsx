@@ -140,6 +140,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
+  const [logsPage, setLogsPage] = useState(1);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
@@ -158,6 +159,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && logMemberFilterId
       ? members.find((member) => member.id === logMemberFilterId)?.displayName || null
       : null;
+
+  const logPageSize = 10;
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / logPageSize));
+  const paginatedLogs = filteredLogs.slice((logsPage - 1) * logPageSize, logsPage * logPageSize);
 
   const filteredPointEntries = useMemo(() => {
     if (!canViewRanking || !pointMemberFilterId) {
@@ -188,6 +193,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       }));
     }
   }, [currentMember, editingPointEntryId]);
+
+  useEffect(() => {
+    setLogsPage(1);
+  }, [logMemberFilterId, activeTab]);
+
+  useEffect(() => {
+    setLogsPage((current) => Math.min(current, totalLogPages));
+  }, [totalLogPages]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -1372,9 +1385,39 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </div>
               </div>
 
+              {filteredLogs.length > 0 ? (
+                <div className="pagination-bar">
+                  <p className="helper-text">
+                    {filteredLogs.length}件中 {(logsPage - 1) * logPageSize + 1}-
+                    {Math.min(logsPage * logPageSize, filteredLogs.length)}件を表示
+                  </p>
+                  <div className="pagination-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setLogsPage((current) => Math.max(1, current - 1))}
+                      disabled={logsPage === 1}
+                    >
+                      前の10件
+                    </button>
+                    <span className="pagination-label">
+                      {logsPage} / {totalLogPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setLogsPage((current) => Math.min(totalLogPages, current + 1))}
+                      disabled={logsPage === totalLogPages}
+                    >
+                      次の10件
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="record-list">
                 {filteredLogs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
-                {filteredLogs.map((log) => {
+                {paginatedLogs.map((log) => {
                   const memberName = members.find((member) => member.id === log.memberId)?.displayName || "不明";
                   const canManage = canManageMemberData(log.memberId);
 
