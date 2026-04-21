@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useEffect,
@@ -133,6 +133,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isSaving, setIsSaving] = useState(false);
   const [isPointSaving, setIsPointSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isAccountSaving, setIsAccountSaving] = useState(false);
@@ -141,6 +142,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
+  const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
@@ -298,13 +300,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Excel出力に失敗しました。");
+        throw new Error(payload.error || "CSV出力に失敗しました。");
       }
 
       const blob = await response.blob();
       const contentDisposition = response.headers.get("content-disposition") || "";
       const fileNameMatch = contentDisposition.match(/filename="?(?<name>[^"]+)"?/);
-      const fileName = decodeURIComponent(fileNameMatch?.groups?.name || "mushi-observations.xls");
+      const fileName = decodeURIComponent(fileNameMatch?.groups?.name || "mushi-observations.csv");
       const objectUrl = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
@@ -314,11 +316,47 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       anchor.remove();
       window.URL.revokeObjectURL(objectUrl);
 
-      setStatusMessage("観察ログをExcel形式で出力しました。");
+      setStatusMessage("観察ログをCSVで出力しました。");
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Excel出力に失敗しました。");
+      setStatusMessage(error instanceof Error ? error.message : "CSV出力に失敗しました。");
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleImportLogs(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsImporting(true);
+    setStatusMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (canViewRanking && logMemberFilterId) {
+        formData.append("memberId", logMemberFilterId);
+      }
+
+      const response = await fetch("/api/observations/import", {
+        method: "POST",
+        body: formData
+      });
+
+      const payload = (await response.json()) as { importedCount?: number; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "CSV取り込みに失敗しました。");
+      }
+
+      await refreshViewerState();
+      setStatusMessage(`${payload.importedCount ?? 0}件の観察ログをCSVから取り込みました。`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "CSV取り込みに失敗しました。");
+    } finally {
+      event.target.value = "";
+      setIsImporting(false);
     }
   }
 
@@ -1375,13 +1413,30 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </label>
                   ) : null}
 
+                  <input
+                    ref={csvImportInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="sr-only"
+                    onChange={handleImportLogs}
+                  />
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => csvImportInputRef.current?.click()}
+                    disabled={isImporting}
+                  >
+                    {isImporting ? "CSV取込中..." : "CSV取込"}
+                  </button>
+
                   <button
                     type="button"
                     className="secondary-button"
                     onClick={handleExportLogs}
                     disabled={isExporting || filteredLogs.length === 0}
                   >
-                    {isExporting ? "Excel出力中..." : "Excel出力"}
+                    {isExporting ? "CSV出力中..." : "CSV出力"}
                   </button>
                 </div>
               </div>
