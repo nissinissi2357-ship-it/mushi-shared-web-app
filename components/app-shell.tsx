@@ -154,6 +154,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [isLogSearchOpen, setIsLogSearchOpen] = useState(false);
+  const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
@@ -484,10 +485,15 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       await refreshEverything();
       setLoginPasscode("");
       setIsAuthPanelOpen(false);
+      setLoginWarningMessage(null);
       setStatusMessage(`${payload.member.displayName} さんでログインしました。`);
       setActiveTab("home");
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "ログインに失敗しました。");
+      const message = error instanceof Error ? error.message : "ログインに失敗しました。";
+      setStatusMessage(message);
+      if (message.includes("合言葉が違います")) {
+        setLoginWarningMessage("合言葉が違います。もう一度確認してください。");
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -1011,6 +1017,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           </div>
         ) : null}
       </header>
+
+      {loginWarningMessage ? (
+        <div className="alert-overlay" onClick={() => setLoginWarningMessage(null)}>
+          <section className="alert-panel" onClick={(event) => event.stopPropagation()}>
+            <p className="section-label">Warning</p>
+            <h2>ログインできません</h2>
+            <p>{loginWarningMessage}</p>
+            <div className="inline-actions">
+              <button type="button" className="primary-button" onClick={() => setLoginWarningMessage(null)}>
+                閉じる
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {isAuthPanelOpen ? (
         <div className="auth-overlay" onClick={() => setIsAuthPanelOpen(false)}>
