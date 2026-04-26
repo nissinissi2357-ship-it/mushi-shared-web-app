@@ -146,6 +146,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
+  const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -503,6 +504,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       await refreshMembers();
       setSelectedMemberId(payload.member.id);
       setRegisterDraft({ displayName: "", passcode: "" });
+      setIsRegisterPanelOpen(false);
       setStatusMessage(`${payload.member.displayName} さんを追加しました。続けてログインできます。`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "隊員登録に失敗しました。");
@@ -945,14 +947,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
           <div className="hero-menu">
             {currentMember ? <p className="hero-member">{currentMember.displayName}</p> : null}
-            <button
-              type="button"
-              className="menu-button"
-              aria-label={currentMember ? `${currentMember.displayName} のアカウントメニュー` : "ログインメニュー"}
-              onClick={() => setIsAuthPanelOpen(true)}
-            >
-              ...
-            </button>
+            {currentMember ? (
+              <button
+                type="button"
+                className="menu-button"
+                aria-label={`${currentMember.displayName} のアカウントメニュー`}
+                onClick={() => setIsAuthPanelOpen(true)}
+              >
+                ...
+              </button>
+            ) : (
+              <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
+                ログイン
+              </button>
+            )}
           </div>
         </div>
 
@@ -1030,36 +1038,54 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
             </section>
 
-            <section className="auth-section">
-              <p className="section-label">Join</p>
-              <form className="registration-box" onSubmit={handleRegister}>
-                <label>
-                  新しい隊員名
-                  <input
-                    type="text"
-                    placeholder="例: たろう"
-                    value={registerDraft.displayName}
-                    onChange={(event) => setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))}
-                  />
-                </label>
-
-                <label>
-                  合言葉
-                  <input
-                    type="password"
-                    placeholder="4文字以上"
-                    value={registerDraft.passcode}
-                    onChange={(event) => setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))}
-                  />
-                </label>
-
-                <div className="session-actions">
-                  <button type="submit" className="secondary-button" disabled={isRegistering}>
-                    {isRegistering ? "登録中..." : "隊員を追加"}
+            {!currentMember ? (
+              <section className="auth-section">
+                <p className="section-label">Join</p>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsRegisterPanelOpen((current) => !current)}
+                  >
+                    {isRegisterPanelOpen ? "新規作成を閉じる" : "新しいアカウントを作成する"}
                   </button>
                 </div>
-              </form>
-            </section>
+
+                {isRegisterPanelOpen ? (
+                  <form className="registration-box" onSubmit={handleRegister}>
+                    <label>
+                      新しい隊員名
+                      <input
+                        type="text"
+                        placeholder="例: たろう"
+                        value={registerDraft.displayName}
+                        onChange={(event) =>
+                          setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      合言葉
+                      <input
+                        type="password"
+                        placeholder="4文字以上"
+                        value={registerDraft.passcode}
+                        onChange={(event) =>
+                          setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))
+                        }
+                      />
+                    </label>
+
+                    <div className="session-actions">
+                      <button type="submit" className="secondary-button" disabled={isRegistering}>
+                        {isRegistering ? "登録中..." : "隊員を追加"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+              </section>
+            ) : null}
 
             {currentMember ? (
               <section className="auth-section">
