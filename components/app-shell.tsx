@@ -1664,9 +1664,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   {filteredLogMemberName ? <p className="helper-text">{filteredLogMemberName} さんのログを表示中です。</p> : null}
                 </div>
 
-                <div className="toolbar-row">
+                <div className="toolbar-row logs-toolbar">
                   {canViewRanking ? (
-                    <label>
+                    <label className="logs-filter-field">
                       隊員で絞り込み
                       <select
                         value={logMemberFilterId ?? ""}
@@ -1811,7 +1811,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     {filteredLogs.length}件中 {(logsPage - 1) * logPageSize + 1}-
                     {Math.min(logsPage * logPageSize, filteredLogs.length)}件を表示
                   </p>
-                  <div className="pagination-actions">
+                  <div className="pagination-actions logs-pagination-actions">
                     <button
                       type="button"
                       className="secondary-button"
@@ -2003,7 +2003,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     {filteredLogs.length}件中 {(logsPage - 1) * logPageSize + 1}-
                     {Math.min(logsPage * logPageSize, filteredLogs.length)}件を表示
                   </p>
-                  <div className="pagination-actions">
+                  <div className="pagination-actions logs-pagination-actions">
                     <button
                       type="button"
                       className="secondary-button"
