@@ -22,7 +22,7 @@ const KNOWN_LOCATIONS = [
   "廿日市",
   "広島市",
   "呉市",
-  "東広島",
+  "東広島市",
   "三次市",
   "世羅町",
   "庄原市",
@@ -35,7 +35,7 @@ const KNOWN_LOCATIONS = [
   "天応吉浦",
   "焼山",
   "灰ヶ峰",
-  "広・阿賀",
+  "広阿賀",
   "仁方",
   "野呂山",
   "川尻",
@@ -54,7 +54,7 @@ const KURE_SUBLOCATIONS = [
   "天応吉浦",
   "焼山",
   "灰ヶ峰",
-  "広・阿賀",
+  "広阿賀",
   "仁方",
   "野呂山",
   "川尻",
@@ -69,6 +69,19 @@ const KURE_SUBLOCATIONS = [
 ] as const;
 
 const SORTED_KNOWN_LOCATIONS = [...KNOWN_LOCATIONS].sort((left, right) => right.length - left.length);
+
+const LOCATION_ALIAS_ENTRIES = [
+  { alias: "東広島", canonical: "東広島市" },
+  { alias: "東広島市", canonical: "東広島市" },
+  { alias: "広・阿賀", canonical: "広阿賀" },
+  { alias: "広阿賀", canonical: "広阿賀" },
+  { alias: "呉市広・阿賀", canonical: "広阿賀" },
+  { alias: "呉市広阿賀", canonical: "広阿賀" }
+] as const;
+
+const SORTED_LOCATION_ALIASES = [...LOCATION_ALIAS_ENTRIES].sort(
+  (left, right) => normalizeLocationText(right.alias).length - normalizeLocationText(left.alias).length
+);
 
 const UI_NOISE_PATTERNS = [
   /^保存$/,
@@ -104,14 +117,38 @@ function isUiNoise(line: string) {
 }
 
 function normalizeLocationText(text: string) {
-  return text.replace(/\s+/g, "").trim();
+  return text.replace(/\s+/g, "").replace(/[・･·]/g, "").trim();
 }
 
 function findKnownLocations(text: string) {
   const normalized = normalizeLocationText(text);
-  return SORTED_KNOWN_LOCATIONS.filter((location) =>
-    normalized.includes(normalizeLocationText(location))
-  );
+  const matches = new Set<string>();
+
+  for (const entry of SORTED_LOCATION_ALIASES) {
+    if (normalized.includes(normalizeLocationText(entry.alias))) {
+      matches.add(entry.canonical);
+    }
+  }
+
+  for (const location of SORTED_KNOWN_LOCATIONS) {
+    if (normalized.includes(normalizeLocationText(location))) {
+      matches.add(location);
+    }
+  }
+
+  const sortedMatches = [...matches].sort((left, right) => right.length - left.length);
+
+  return sortedMatches.filter((location, index) => {
+    const normalizedLocation = normalizeLocationText(location);
+    return !sortedMatches.some((other, otherIndex) => {
+      if (otherIndex === index) {
+        return false;
+      }
+
+      const normalizedOther = normalizeLocationText(other);
+      return normalizedOther.length > normalizedLocation.length && normalizedOther.includes(normalizedLocation);
+    });
+  });
 }
 
 function pickPreferredLocation(locations: string[]) {
