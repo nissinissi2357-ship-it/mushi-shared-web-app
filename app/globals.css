@@ -460,6 +460,10 @@ select {
   flex-wrap: wrap;
 }
 
+.pagination-bar-bottom {
+  margin-top: 18px;
+}
+
 .pagination-actions {
   display: flex;
   align-items: center;

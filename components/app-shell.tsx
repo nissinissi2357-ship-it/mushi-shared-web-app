@@ -165,6 +165,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [isLogSearchOpen, setIsLogSearchOpen] = useState(false);
+  const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
@@ -1697,23 +1698,43 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onChange={handleImportLogs}
                   />
 
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => csvImportInputRef.current?.click()}
-                    disabled={isImporting}
-                  >
-                    {isImporting ? "CSV取込中..." : "CSV取込"}
-                  </button>
+                  <div className="card-menu">
+                    <button
+                      type="button"
+                      className="card-menu-button"
+                      aria-label="観察ログのデータ操作を開く"
+                      onClick={() => setIsLogDataMenuOpen((current) => !current)}
+                    >
+                      データ
+                    </button>
+                    {isLogDataMenuOpen ? (
+                      <div className="card-menu-popup">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            setIsLogDataMenuOpen(false);
+                            csvImportInputRef.current?.click();
+                          }}
+                          disabled={isImporting}
+                        >
+                          {isImporting ? "CSV取込中..." : "CSV取込"}
+                        </button>
 
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={handleExportLogs}
-                    disabled={isExporting || filteredLogs.length === 0}
-                  >
-                    {isExporting ? "CSV出力中..." : "CSV出力"}
-                  </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            setIsLogDataMenuOpen(false);
+                            void handleExportLogs();
+                          }}
+                          disabled={isExporting || filteredLogs.length === 0}
+                        >
+                          {isExporting ? "CSV出力中..." : "CSV出力"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 {isLogSearchOpen ? (
@@ -1975,6 +1996,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   );
                 })}
               </div>
+
+              {filteredLogs.length > 0 ? (
+                <div className="pagination-bar pagination-bar-bottom">
+                  <p className="helper-text">
+                    {filteredLogs.length}件中 {(logsPage - 1) * logPageSize + 1}-
+                    {Math.min(logsPage * logPageSize, filteredLogs.length)}件を表示
+                  </p>
+                  <div className="pagination-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setLogsPage((current) => Math.max(1, current - 1))}
+                      disabled={logsPage === 1}
+                    >
+                      前の10件
+                    </button>
+                    <span className="pagination-label">
+                      {logsPage} / {totalLogPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setLogsPage((current) => Math.min(totalLogPages, current + 1))}
+                      disabled={logsPage === totalLogPages}
+                    >
+                      次の10件
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
 
