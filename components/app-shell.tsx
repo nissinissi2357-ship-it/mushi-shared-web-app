@@ -941,20 +941,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           <div>
             <p className="eyebrow">Shared Edition</p>
             <h1>ムシムシ探検隊</h1>
-            <p className="helper-text">
-              隊員ごとの観察ログ、追加ポイント、ランキングをひとつの画面で管理できます。
-            </p>
           </div>
 
-          <div className="auth-buttons">
-            <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
-              {currentMember ? `${currentMember.displayName}` : "ログイン"}
+          <div className="hero-menu">
+            {currentMember ? <p className="hero-member">{currentMember.displayName}</p> : null}
+            <button
+              type="button"
+              className="menu-button"
+              aria-label={currentMember ? `${currentMember.displayName} のアカウントメニュー` : "ログインメニュー"}
+              onClick={() => setIsAuthPanelOpen(true)}
+            >
+              ...
             </button>
-            {currentMember ? (
-              <button type="button" className="ghost-button" onClick={handleLogout}>
-                ログアウト
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -978,9 +976,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <p className="section-label">Account</p>
                 <h2>{currentMember ? "アカウント設定" : "ログイン"}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
-                閉じる
-              </button>
+              <div className="auth-panel-actions">
+                {currentMember ? (
+                  <button type="button" className="ghost-button" onClick={handleLogout}>
+                    ログアウト
+                  </button>
+                ) : null}
+                <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
+                  閉じる
+                </button>
+              </div>
             </div>
 
             <section className="auth-section">
