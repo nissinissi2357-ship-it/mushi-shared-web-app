@@ -345,6 +345,14 @@ select {
   align-items: end;
 }
 
+.ranking-head {
+  margin-top: 22px;
+}
+
+.ranking-head h3 {
+  margin: 4px 0 0;
+}
+
 label {
   display: grid;
   gap: 8px;

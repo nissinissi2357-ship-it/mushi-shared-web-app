@@ -66,6 +66,11 @@ type AdminCreateDraft = {
   role: MemberRole;
 };
 
+type RankingPeriodOption = {
+  value: string;
+  label: string;
+};
+
 function toLocalInputValue(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
@@ -142,12 +147,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
+  const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
   const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
   const isAdmin = currentMember?.role === "admin";
+  const currentYear = new Date().getFullYear();
 
   const filteredLogs = useMemo(() => {
     if (!canViewRanking || !logMemberFilterId) {
@@ -188,6 +195,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return buildMonthlyPointSeries(logs, pointEntries, currentMember.id);
   }, [currentMember, logs, pointEntries]);
 
+  const rankingPeriodOptions = useMemo(
+    () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
+    [currentYear, logs, pointEntries]
+  );
+
+  const rankingSummaries = useMemo(
+    () => buildRankingSummaries(members, logs, pointEntries, rankingPeriod),
+    [logs, members, pointEntries, rankingPeriod]
+  );
+
+  const selectedRankingPeriodLabel =
+    rankingPeriodOptions.find((option) => option.value === rankingPeriod)?.label ?? "今月ランキング";
+
   useEffect(() => {
     if (currentMember && !editingPointEntryId) {
       setPointDraft((current) => ({
@@ -204,6 +224,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   useEffect(() => {
     setLogsPage((current) => Math.min(current, totalLogPages));
   }, [totalLogPages]);
+
+  useEffect(() => {
+    if (!rankingPeriodOptions.some((option) => option.value === rankingPeriod)) {
+      setRankingPeriod(rankingPeriodOptions[0]?.value ?? `month:${toMonthKey(new Date())}`);
+    }
+  }, [rankingPeriod, rankingPeriodOptions]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -1217,29 +1243,49 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               <MonthlyTrendChart data={monthlyPointSeries} />
 
               {canViewRanking ? (
-                <div className="ranking-list">
-                  {summaries.map((summary, index) => (
-                    <article
-                      key={summary.memberId}
-                      className="ranking-item"
-                      onClick={() => {
-                        setLogMemberFilterId(summary.memberId);
-                        setActiveTab("logs");
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <span className="ranking-rank">{index + 1}</span>
-                      <div>
-                        <p className="ranking-name">{summary.displayName}</p>
-                        <p className="ranking-meta">
-                          {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
-                          {summary.recordCount}件 / 追加{summary.pointEntryCount}件
-                        </p>
-                      </div>
-                      <div className="ranking-points">{summary.totalPoints}P</div>
-                    </article>
-                  ))}
-                </div>
+                <>
+                  <div className="panel-head ranking-head">
+                    <div>
+                      <p className="section-label">Ranking</p>
+                      <h3>{selectedRankingPeriodLabel}</h3>
+                    </div>
+
+                    <label>
+                      期間
+                      <select value={rankingPeriod} onChange={(event) => setRankingPeriod(event.target.value)}>
+                        {rankingPeriodOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="ranking-list">
+                    {rankingSummaries.map((summary, index) => (
+                      <article
+                        key={`${rankingPeriod}-${summary.memberId}`}
+                        className="ranking-item"
+                        onClick={() => {
+                          setLogMemberFilterId(summary.memberId);
+                          setActiveTab("logs");
+                        }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <span className="ranking-rank">{index + 1}</span>
+                        <div>
+                          <p className="ranking-name">{summary.displayName}</p>
+                          <p className="ranking-meta">
+                            {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
+                            {summary.recordCount}件 / 追加{summary.pointEntryCount}件
+                          </p>
+                        </div>
+                        <div className="ranking-points">{summary.totalPoints}P</div>
+                      </article>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <p className="helper-text">ランキングは隊長またはAdminだけが見られます。</p>
               )}
@@ -2176,6 +2222,71 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
   );
 }
 
+function buildRankingPeriodOptions(logs: ObservationLog[], pointEntries: PointEntry[], currentYear: number): RankingPeriodOption[] {
+  const currentMonthKey = toMonthKey(new Date());
+  const monthKeys = new Set<string>([currentMonthKey]);
+
+  for (const log of logs) {
+    monthKeys.add(toMonthKey(log.observedAt));
+  }
+
+  for (const entry of pointEntries) {
+    monthKeys.add(toMonthKey(entry.awardedAt));
+  }
+
+  const monthlyOptions = Array.from(monthKeys)
+    .sort((left, right) => right.localeCompare(left))
+    .map((monthKey) => ({
+      value: `month:${monthKey}`,
+      label: monthKey === currentMonthKey ? "今月ランキング" : `${formatMonthKey(monthKey)}ランキング`
+    }));
+
+  return [...monthlyOptions, { value: `year:${currentYear}`, label: `通算（${currentYear}年）` }];
+}
+
+function buildRankingSummaries(
+  members: Member[],
+  logs: ObservationLog[],
+  pointEntries: PointEntry[],
+  period: string
+): MemberSummary[] {
+  const [scope, rawValue] = period.split(":");
+  const filteredLogs = logs.filter((log) => matchesRankingPeriod(log.observedAt, scope, rawValue));
+  const filteredPointEntries = pointEntries.filter((entry) => matchesRankingPeriod(entry.awardedAt, scope, rawValue));
+
+  return members
+    .map((member) => {
+      const memberLogs = filteredLogs.filter((log) => log.memberId === member.id);
+      const memberPointEntries = filteredPointEntries.filter((entry) => entry.memberId === member.id);
+      const observationPoints = memberLogs.reduce((sum, log) => sum + log.points, 0);
+      const extraPoints = memberPointEntries.reduce((sum, entry) => sum + entry.points, 0);
+      const sortedLogs = [...memberLogs].sort((left, right) => right.observedAt.localeCompare(left.observedAt));
+
+      return {
+        memberId: member.id,
+        displayName: member.displayName,
+        role: member.role,
+        totalPoints: observationPoints + extraPoints,
+        observationPoints,
+        extraPoints,
+        recordCount: memberLogs.length,
+        pointEntryCount: memberPointEntries.length,
+        latestObservedAt: sortedLogs[0]?.observedAt ?? null
+      };
+    })
+    .sort((left, right) => {
+      if (right.totalPoints !== left.totalPoints) {
+        return right.totalPoints - left.totalPoints;
+      }
+
+      if (right.recordCount !== left.recordCount) {
+        return right.recordCount - left.recordCount;
+      }
+
+      return left.displayName.localeCompare(right.displayName, "ja");
+    });
+}
+
 function buildMonthlyPointSeries(
   logs: ObservationLog[],
   pointEntries: PointEntry[],
@@ -2232,6 +2343,24 @@ function buildMonthlyPointSeries(
       recordCount: value.recordCount
     };
   });
+}
+
+function matchesRankingPeriod(value: string, scope: string, rawValue: string) {
+  if (scope === "year") {
+    return new Date(value).getFullYear() === Number(rawValue);
+  }
+
+  return toMonthKey(value) === rawValue;
+}
+
+function toMonthKey(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  return `${year}年${Number(month)}月`;
 }
 
 function parseCoordinates(latitude: string, longitude: string) {
