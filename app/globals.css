@@ -452,6 +452,29 @@ select {
   align-items: end;
 }
 
+.search-panel {
+  margin-top: 14px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.search-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .card-menu {
   position: relative;
 }
@@ -795,6 +818,7 @@ select:disabled {
   .registration-box,
   .account-form,
   .admin-create-form,
+  .search-grid,
   .editor-grid {
     grid-template-columns: 1fr;
   }
@@ -814,7 +838,8 @@ select:disabled {
   }
 
   .toolbar-row,
-  .inline-actions {
+  .inline-actions,
+  .search-panel-head {
     align-items: stretch;
     flex-direction: column;
   }

@@ -75,6 +75,11 @@ function toLocalInputValue(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+function toDateInputValue(dateLike: string | Date) {
+  const date = typeof dateLike === "string" ? new Date(dateLike) : dateLike;
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 function getDefaultObservationDraft(): DraftObservation {
   return {
     observedAt: toLocalInputValue(),
@@ -148,6 +153,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+  const [isLogSearchOpen, setIsLogSearchOpen] = useState(false);
+  const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
+  const [logSearchSpecies, setLogSearchSpecies] = useState("");
+  const [logSearchLocation, setLogSearchLocation] = useState("");
+  const [logSearchDate, setLogSearchDate] = useState("");
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
@@ -159,13 +169,32 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const isAdmin = currentMember?.role === "admin";
   const currentYear = new Date().getFullYear();
 
+  const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
+
   const filteredLogs = useMemo(() => {
-    if (!canViewRanking || !logMemberFilterId) {
-      return logs;
+    const scopedLogs =
+      canViewRanking && logMemberFilterId ? logs.filter((log) => log.memberId === logMemberFilterId) : logs;
+
+    const speciesQuery = logSearchSpecies.trim().toLocaleLowerCase("ja-JP");
+    const locationQuery = logSearchLocation.trim().toLocaleLowerCase("ja-JP");
+    const activeChecks = [
+      speciesQuery
+        ? (log: ObservationLog) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
+        : null,
+      locationQuery
+        ? (log: ObservationLog) => log.location.toLocaleLowerCase("ja-JP").includes(locationQuery)
+        : null,
+      logSearchDate ? (log: ObservationLog) => toDateInputValue(log.observedAt) === logSearchDate : null
+    ].filter(Boolean) as Array<(log: ObservationLog) => boolean>;
+
+    if (activeChecks.length === 0) {
+      return scopedLogs;
     }
 
-    return logs.filter((log) => log.memberId === logMemberFilterId);
-  }, [canViewRanking, logMemberFilterId, logs]);
+    return scopedLogs.filter((log) =>
+      logSearchMode === "and" ? activeChecks.every((check) => check(log)) : activeChecks.some((check) => check(log))
+    );
+  }, [canViewRanking, logMemberFilterId, logs, logSearchDate, logSearchLocation, logSearchMode, logSearchSpecies]);
 
   const filteredLogMemberName =
     canViewRanking && logMemberFilterId
@@ -222,7 +251,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   useEffect(() => {
     setLogsPage(1);
-  }, [logMemberFilterId, activeTab]);
+  }, [logMemberFilterId, logSearchDate, logSearchLocation, logSearchMode, logSearchSpecies, activeTab]);
 
   useEffect(() => {
     setLogsPage((current) => Math.min(current, totalLogPages));
@@ -1509,6 +1538,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </label>
                   ) : null}
 
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsLogSearchOpen((current) => !current)}
+                  >
+                    {isLogSearchOpen ? "検索を閉じる" : hasLogSearch ? "検索中" : "検索"}
+                  </button>
+
                   <input
                     ref={csvImportInputRef}
                     type="file"
@@ -1535,6 +1572,73 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     {isExporting ? "CSV出力中..." : "CSV出力"}
                   </button>
                 </div>
+
+                {isLogSearchOpen ? (
+                  <div className="search-panel">
+                    <div className="search-panel-head">
+                      <p className="section-label">Search</p>
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className={logSearchMode === "and" ? "primary-button" : "ghost-button"}
+                          onClick={() => setLogSearchMode("and")}
+                        >
+                          AND検索
+                        </button>
+                        <button
+                          type="button"
+                          className={logSearchMode === "or" ? "primary-button" : "ghost-button"}
+                          onClick={() => setLogSearchMode("or")}
+                        >
+                          OR検索
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="search-grid">
+                      <label>
+                        種名
+                        <input
+                          type="text"
+                          placeholder="例: ナミアゲハ"
+                          value={logSearchSpecies}
+                          onChange={(event) => setLogSearchSpecies(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        場所
+                        <input
+                          type="text"
+                          placeholder="例: 呉市焼山"
+                          value={logSearchLocation}
+                          onChange={(event) => setLogSearchLocation(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        日付
+                        <input type="date" value={logSearchDate} onChange={(event) => setLogSearchDate(event.target.value)} />
+                      </label>
+                    </div>
+
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => {
+                          setLogSearchSpecies("");
+                          setLogSearchLocation("");
+                          setLogSearchDate("");
+                          setLogSearchMode("and");
+                        }}
+                        disabled={!hasLogSearch && logSearchMode === "and"}
+                      >
+                        条件をクリア
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {filteredLogs.length > 0 ? (
@@ -1568,7 +1672,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               ) : null}
 
               <div className="record-list">
-                {filteredLogs.length === 0 ? <p className="helper-text">まだ観察ログがありません。</p> : null}
+                {filteredLogs.length === 0 ? (
+                  <p className="helper-text">{hasLogSearch ? "検索条件に合う観察ログがありません。" : "まだ観察ログがありません。"}</p>
+                ) : null}
                 {paginatedLogs.map((log) => {
                   const memberName = members.find((member) => member.id === log.memberId)?.displayName || "不明";
                   const canManage = canManageMemberData(log.memberId);
