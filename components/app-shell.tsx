@@ -147,6 +147,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
@@ -477,6 +478,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setAccountDisplayName("");
       setAccountPasscode("");
       setIsAuthPanelOpen(false);
+      setIsAccountSettingsOpen(false);
       setEditingLogId(null);
       setEditingPointEntryId(null);
       setStatusMessage("ログアウトしました。");
@@ -541,7 +543,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       }
 
       await refreshEverything();
-      setStatusMessage("表示名と合言葉を更新しました。");
+      setStatusMessage("アカウント名と合言葉を更新しました。");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "アカウント更新に失敗しました。");
     } finally {
@@ -1095,32 +1097,44 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             {currentMember ? (
               <section className="auth-section">
                 <p className="section-label">My Account</p>
-                <form className="account-form" onSubmit={handleAccountUpdate}>
-                  <label>
-                    表示名
-                    <input
-                      type="text"
-                      value={accountDisplayName}
-                      onChange={(event) => setAccountDisplayName(event.target.value)}
-                    />
-                  </label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsAccountSettingsOpen((current) => !current)}
+                  >
+                    {isAccountSettingsOpen ? "アカウント設定を閉じる" : "アカウント設定"}
+                  </button>
+                </div>
 
-                  <label>
-                    新しい合言葉
-                    <input
-                      type="password"
-                      placeholder="変更しないなら空欄"
-                      value={accountPasscode}
-                      onChange={(event) => setAccountPasscode(event.target.value)}
-                    />
-                  </label>
+                {isAccountSettingsOpen ? (
+                  <form className="account-form" onSubmit={handleAccountUpdate}>
+                    <label>
+                      アカウント名
+                      <input
+                        type="text"
+                        value={accountDisplayName}
+                        onChange={(event) => setAccountDisplayName(event.target.value)}
+                      />
+                    </label>
 
-                  <div className="session-actions">
-                    <button type="submit" className="secondary-button" disabled={isAccountSaving}>
-                      {isAccountSaving ? "更新中..." : "表示名と合言葉を更新"}
-                    </button>
-                  </div>
-                </form>
+                    <label>
+                      新しい合言葉
+                      <input
+                        type="password"
+                        placeholder="変更しないなら空欄"
+                        value={accountPasscode}
+                        onChange={(event) => setAccountPasscode(event.target.value)}
+                      />
+                    </label>
+
+                    <div className="session-actions">
+                      <button type="submit" className="secondary-button" disabled={isAccountSaving}>
+                        {isAccountSaving ? "更新中..." : "アカウント名と合言葉を更新"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
               </section>
             ) : null}
 
