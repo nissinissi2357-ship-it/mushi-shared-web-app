@@ -1827,6 +1827,8 @@ function MapCoordinatePicker({
   const [center, setCenter] = useState(defaultCenter);
   const [zoom, setZoom] = useState(11);
   const [viewportSize, setViewportSize] = useState(320);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
   const mapRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const gestureRef = useRef<{
@@ -2044,6 +2046,51 @@ function MapCoordinatePicker({
     updateZoom(zoom + delta, event.clientX, event.clientY);
   }
 
+  function stopMapGesture(event: ReactPointerEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function applyCoordinates(nextLatitude: number, nextLongitude: number) {
+    const normalized = {
+      latitude: clampLatitude(nextLatitude),
+      longitude: normalizeLongitude(nextLongitude)
+    };
+
+    onChange({
+      latitude: normalized.latitude.toFixed(6),
+      longitude: normalized.longitude.toFixed(6)
+    });
+    setCenter(normalized);
+  }
+
+  function handleUseCurrentLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationMessage("この端末では現在地を取得できません。");
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        applyCoordinates(position.coords.latitude, position.coords.longitude);
+        setZoom((current) => Math.max(current, 15));
+        setLocationMessage("現在地を入れました。");
+        setIsLocating(false);
+      },
+      () => {
+        setLocationMessage("現在地を取得できませんでした。");
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+  }
+
   return (
     <div className="coordinate-picker">
       <div className="coordinate-picker-head">
@@ -2052,23 +2099,16 @@ function MapCoordinatePicker({
           <strong className="map-title">地図から場所を選ぶ</strong>
           <strong>地図から座標を選ぶ</strong>
         </div>
-        <p className="helper-text">任意項目です。ドラッグで移動、ズームで拡大縮小、タップで座標を選べます。</p>
-        <p className="helper-text map-help">ドラッグで移動、ピンチやホイール、下のスライダーで拡大縮小できます。タップで座標を選べます。</p>
+          <p className="helper-text">
+            任意項目です。ドラッグで移動、ピンチやホイール、右上の + / - で拡大縮小できます。タップで座標を選べます。
+          </p>
+          <p className="helper-text map-help">「現在地を使う」を押すと、今いる場所の座標をすぐに入れられます。</p>
       </div>
 
       <div className="map-controls">
-        <label className="zoom-control">
-          <span className="zoom-label">ズーム</span>
-          ズーム
-          <input
-            type="range"
-            min="7"
-            max="17"
-            step="1"
-            value={zoom}
-            onChange={(event) => updateZoom(Number(event.target.value))}
-          />
-        </label>
+        <button type="button" className="secondary-button" onClick={handleUseCurrentLocation} disabled={isLocating}>
+          {isLocating ? "現在地取得中..." : "現在地を使う"}
+        </button>
         <button
           type="button"
           className="ghost-button"
@@ -2091,6 +2131,15 @@ function MapCoordinatePicker({
         tabIndex={0}
         aria-label="観察場所の地図"
       >
+        <div className="map-overlay-controls" onPointerDown={stopMapGesture}>
+          <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom + 1)} aria-label="拡大">
+            +
+          </button>
+          <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom - 1)} aria-label="縮小">
+            -
+          </button>
+        </div>
+
         {tiles.map((tile) => (
           <img
             key={`${tile.zoom}-${tile.x}-${tile.y}`}
@@ -2111,6 +2160,8 @@ function MapCoordinatePicker({
           />
         ) : null}
       </div>
+
+      {locationMessage ? <p className="helper-text">{locationMessage}</p> : null}
 
       <div className="coordinate-inputs">
         <label>
