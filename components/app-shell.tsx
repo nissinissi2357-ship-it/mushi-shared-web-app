@@ -1229,7 +1229,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               {currentSummary ? (
                 <div className="hero-stats">
                   <StatCard label={`${currentYear}年の合計`} value={`${currentSummary.totalPoints}P`} />
-                  <StatCard label="今年の観察" value={`${currentSummary.observationPoints}P`} />
                   <StatCard label="通算ポイント" value={`${currentSummary.lifetimeTotalPoints}P`} />
                   <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
                 </div>
