@@ -503,6 +503,37 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.table-scroll {
+  overflow-x: auto;
+  border-radius: 20px;
+  border: 1px solid rgba(31, 42, 31, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.inquiry-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+
+.inquiry-table th,
+.inquiry-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.inquiry-table th {
+  background: rgba(236, 241, 231, 0.92);
+  color: var(--forest-900);
+  font-size: 0.92rem;
+}
+
+.inquiry-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .card-menu {
   position: relative;
 }

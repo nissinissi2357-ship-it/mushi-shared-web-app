@@ -25,6 +25,15 @@ export type ObservationExportLog = ObservationLog & {
   memberDisplayName: string;
 };
 
+export type InquiryObservation = {
+  id: string;
+  observedAt: string;
+  location: string;
+  species: string;
+};
+
+export type InquiryGroupPriority = "species" | "location" | "date";
+
 export type PointEntry = {
   id: string;
   memberId: string;
@@ -47,7 +56,7 @@ export type MemberSummary = {
   latestObservedAt: string | null;
 };
 
-export type TabId = "home" | "record" | "logs" | "points";
+export type TabId = "home" | "record" | "logs" | "inquiry" | "points";
 
 export type ObservationInsertInput = {
   observedAt: string;

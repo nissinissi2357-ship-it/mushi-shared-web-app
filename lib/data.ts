@@ -2,6 +2,7 @@ import { hashPasscode } from "@/lib/auth";
 import { buildSummaries, fallbackLogs, fallbackMembers, fallbackPointEntries } from "@/lib/mock-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
+  InquiryObservation,
   LoginResult,
   Member,
   MemberRole,
@@ -103,6 +104,36 @@ export async function getViewerFromSession(session: SessionMember | null): Promi
     return buildViewer(member);
   } catch {
     return null;
+  }
+}
+
+export async function listInquiryObservations(): Promise<InquiryObservation[]> {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("observation_logs")
+      .select("id, observed_at, location, species")
+      .order("observed_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      observedAt: String(row.observed_at),
+      location: String(row.location),
+      species: String(row.species)
+    }));
+  } catch {
+    return fallbackLogs
+      .map((log) => ({
+        id: log.id,
+        observedAt: log.observedAt,
+        location: log.location,
+        species: log.species
+      }))
+      .sort((left, right) => right.observedAt.localeCompare(left.observedAt));
   }
 }
 

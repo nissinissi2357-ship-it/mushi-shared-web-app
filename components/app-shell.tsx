@@ -13,6 +13,8 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { parseCaptainMessage } from "@/lib/line-parser";
 import type {
+  InquiryGroupPriority,
+  InquiryObservation,
   InitialViewerState,
   LoginResult,
   Member,
@@ -27,6 +29,7 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "home", label: "ホーム" },
   { id: "record", label: "観察登録" },
   { id: "logs", label: "観察ログ" },
+  { id: "inquiry", label: "記録照会" },
   { id: "points", label: "追加ポイント" }
 ];
 
@@ -69,6 +72,14 @@ type AdminCreateDraft = {
 type RankingPeriodOption = {
   value: string;
   label: string;
+};
+
+type InquiryAggregateRow = {
+  key: string;
+  species: string;
+  location: string;
+  date: string;
+  count: number;
 };
 
 function toLocalInputValue(date = new Date()) {
@@ -154,11 +165,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [isLogSearchOpen, setIsLogSearchOpen] = useState(false);
+  const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
+  const [inquirySearchMode, setInquirySearchMode] = useState<"and" | "or">("and");
+  const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
+  const [inquirySearchLocation, setInquirySearchLocation] = useState("");
+  const [inquirySearchDate, setInquirySearchDate] = useState("");
+  const [inquiryPriority, setInquiryPriority] = useState<InquiryGroupPriority>("species");
+  const [inquiryLogs, setInquiryLogs] = useState<InquiryObservation[]>([]);
+  const [isInquiryLoading, setIsInquiryLoading] = useState(false);
   const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
@@ -219,6 +238,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && pointMemberFilterId
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
+  const hasInquirySearch = Boolean(inquirySearchSpecies.trim() || inquirySearchLocation.trim() || inquirySearchDate);
+
+  const filteredInquiryLogs = useMemo(() => {
+    const speciesQuery = inquirySearchSpecies.trim().toLocaleLowerCase("ja-JP");
+    const locationQuery = inquirySearchLocation.trim().toLocaleLowerCase("ja-JP");
+    const activeChecks = [
+      speciesQuery
+        ? (log: InquiryObservation) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
+        : null,
+      locationQuery
+        ? (log: InquiryObservation) => log.location.toLocaleLowerCase("ja-JP").includes(locationQuery)
+        : null,
+      inquirySearchDate ? (log: InquiryObservation) => toDateInputValue(log.observedAt) === inquirySearchDate : null
+    ].filter(Boolean) as Array<(log: InquiryObservation) => boolean>;
+
+    if (activeChecks.length === 0) {
+      return inquiryLogs;
+    }
+
+    return inquiryLogs.filter((log) =>
+      inquirySearchMode === "and" ? activeChecks.every((check) => check(log)) : activeChecks.some((check) => check(log))
+    );
+  }, [inquiryLogs, inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+
+  const inquiryRows = useMemo(
+    () => buildInquiryRows(filteredInquiryLogs, inquiryPriority),
+    [filteredInquiryLogs, inquiryPriority]
+  );
+
+  const inquiryColumns = useMemo(() => buildInquiryColumns(inquiryPriority), [inquiryPriority]);
   const summaryYear = new Date().getFullYear();
 
   const monthlyPointSeries = useMemo(() => {
@@ -264,6 +313,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setRankingPeriod(rankingPeriodOptions[0]?.value ?? `month:${toMonthKey(new Date())}`);
     }
   }, [rankingPeriod, rankingPeriodOptions]);
+
+  useEffect(() => {
+    if (!currentMember) {
+      setInquiryLogs([]);
+      return;
+    }
+
+    if (activeTab !== "inquiry") {
+      return;
+    }
+
+    let cancelled = false;
+    setIsInquiryLoading(true);
+
+    refreshInquiryLogs()
+      .catch((error) => {
+        if (!cancelled) {
+          setStatusMessage(error instanceof Error ? error.message : "記録照会データの取得に失敗しました。");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsInquiryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentMember]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -333,6 +412,24 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     applyViewerPayload(payload);
     return payload;
+  }
+
+  async function refreshInquiryLogs() {
+    const response = await fetch("/api/inquiry", {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+
+    const payload = (await response.json()) as { logs?: InquiryObservation[]; error?: string };
+    if (!response.ok || !payload.logs) {
+      throw new Error(payload.error || "記録照会データの取得に失敗しました。");
+    }
+
+    setInquiryLogs(payload.logs);
+    return payload.logs;
   }
 
   async function refreshEverything() {
@@ -530,6 +627,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setCurrentMember(null);
       setLogs([]);
       setPointEntries([]);
+      setInquiryLogs([]);
       setSummaries([]);
       setLogMemberFilterId(null);
       setPointMemberFilterId(null);
@@ -1880,6 +1978,150 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             </section>
           ) : null}
 
+          {activeTab === "inquiry" ? (
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-label">Inquiry</p>
+                  <h2>記録照会</h2>
+                  <p className="helper-text">全隊員の観察記録から、今シーズンの記録状況をまとめて確認できます。</p>
+                </div>
+
+                <div className="toolbar-row">
+                  <label>
+                    取りまとめの優先項目
+                    <select
+                      value={inquiryPriority}
+                      onChange={(event) => setInquiryPriority(event.target.value as InquiryGroupPriority)}
+                    >
+                      <option value="species">種名別を優先</option>
+                      <option value="location">場所別を優先</option>
+                      <option value="date">日付別を優先</option>
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setIsInquirySearchOpen((current) => !current)}
+                  >
+                    {isInquirySearchOpen ? "検索を閉じる" : hasInquirySearch ? "検索中" : "検索"}
+                  </button>
+                </div>
+
+                {isInquirySearchOpen ? (
+                  <div className="search-panel">
+                    <div className="search-panel-head">
+                      <p className="section-label">Search</p>
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className={inquirySearchMode === "and" ? "primary-button" : "ghost-button"}
+                          onClick={() => setInquirySearchMode("and")}
+                        >
+                          AND検索
+                        </button>
+                        <button
+                          type="button"
+                          className={inquirySearchMode === "or" ? "primary-button" : "ghost-button"}
+                          onClick={() => setInquirySearchMode("or")}
+                        >
+                          OR検索
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="search-grid">
+                      <label>
+                        種名
+                        <input
+                          type="text"
+                          placeholder="例: セボシジョウカイ"
+                          value={inquirySearchSpecies}
+                          onChange={(event) => setInquirySearchSpecies(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        場所
+                        <input
+                          type="text"
+                          placeholder="例: 呉市焼山"
+                          value={inquirySearchLocation}
+                          onChange={(event) => setInquirySearchLocation(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        日付
+                        <input
+                          type="date"
+                          value={inquirySearchDate}
+                          onChange={(event) => setInquirySearchDate(event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="inline-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => {
+                          setInquirySearchSpecies("");
+                          setInquirySearchLocation("");
+                          setInquirySearchDate("");
+                          setInquirySearchMode("and");
+                        }}
+                        disabled={!hasInquirySearch && inquirySearchMode === "and"}
+                      >
+                        条件をクリア
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              {isInquiryLoading ? <p className="helper-text">記録照会データを読み込み中です。</p> : null}
+
+              {!isInquiryLoading ? (
+                <p className="helper-text">
+                  {filteredInquiryLogs.length}件の記録から、{inquiryRows.length}件の組み合わせを表示しています。
+                </p>
+              ) : null}
+
+              {!isInquiryLoading && inquiryRows.length === 0 ? (
+                <p className="helper-text">
+                  {hasInquirySearch ? "検索条件に合う記録はありません。" : "照会できる観察記録がまだありません。"}
+                </p>
+              ) : null}
+
+              {!isInquiryLoading && inquiryRows.length > 0 ? (
+                <div className="table-scroll">
+                  <table className="inquiry-table">
+                    <thead>
+                      <tr>
+                        {inquiryColumns.map((column) => (
+                          <th key={column.key}>{column.label}</th>
+                        ))}
+                        <th>件数</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inquiryRows.map((row) => (
+                        <tr key={row.key}>
+                          {inquiryColumns.map((column) => (
+                            <td key={column.key}>{row[column.key]}</td>
+                          ))}
+                          <td>{row.count}件</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           {activeTab === "points" ? (
             <section className="panel">
               <div className="panel-head">
@@ -2042,7 +2284,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             </div>
           </div>
           <p className="helper-text">
-            右上のログインボタンから入ると、ホーム・観察登録・観察ログ・追加ポイントが使えるようになります。
+            右上のログインボタンから入ると、ホーム・観察登録・観察ログ・記録照会・追加ポイントが使えるようになります。
           </p>
         </section>
       )}
@@ -2508,6 +2750,59 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
       )}
     </section>
   );
+}
+
+function buildInquiryRows(logs: InquiryObservation[], priority: InquiryGroupPriority): InquiryAggregateRow[] {
+  const grouped = new Map<string, InquiryAggregateRow>();
+
+  for (const log of logs) {
+    const date = toDateInputValue(log.observedAt);
+    const key = [log.species, log.location, date].join("||");
+    const current = grouped.get(key);
+
+    if (current) {
+      current.count += 1;
+      continue;
+    }
+
+    grouped.set(key, {
+      key,
+      species: log.species,
+      location: log.location,
+      date,
+      count: 1
+    });
+  }
+
+  const priorityOrder = buildInquiryColumns(priority).map((column) => column.key);
+
+  return [...grouped.values()].sort((left, right) => {
+    for (const field of priorityOrder) {
+      const comparison = left[field].localeCompare(right[field], "ja-JP");
+      if (comparison !== 0) {
+        return comparison;
+      }
+    }
+
+    return right.count - left.count;
+  });
+}
+
+function buildInquiryColumns(priority: InquiryGroupPriority): Array<{ key: InquiryGroupPriority; label: string }> {
+  const labels: Record<InquiryGroupPriority, string> = {
+    species: "種名",
+    location: "場所",
+    date: "日付"
+  };
+
+  const order =
+    priority === "species"
+      ? (["species", "location", "date"] as const)
+      : priority === "location"
+        ? (["location", "species", "date"] as const)
+        : (["date", "species", "location"] as const);
+
+  return order.map((key) => ({ key, label: labels[key] }));
 }
 
 function buildRankingPeriodOptions(logs: ObservationLog[], pointEntries: PointEntry[], currentYear: number): RankingPeriodOption[] {
