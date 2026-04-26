@@ -159,6 +159,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
+  const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
@@ -336,6 +337,29 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function refreshEverything() {
     await Promise.all([refreshMembers(), refreshViewerState()]);
+  }
+
+  function revealSavedLog(payload: LoginResult, log: ObservationLog) {
+    setIsLogSearchOpen(false);
+    setLogSearchMode("and");
+    setLogSearchSpecies("");
+    setLogSearchLocation("");
+    setLogSearchDate("");
+    setHighlightedLogId(log.id);
+
+    const shouldFilterToMember = payload.member.role === "captain" || payload.member.role === "admin";
+    const targetLogs = shouldFilterToMember
+      ? payload.logs.filter((entry) => entry.memberId === log.memberId)
+      : payload.logs;
+
+    if (shouldFilterToMember) {
+      setLogMemberFilterId(log.memberId);
+    }
+
+    const logIndex = targetLogs.findIndex((entry) => entry.id === log.id);
+    const nextPage = logIndex >= 0 ? Math.floor(logIndex / logPageSize) + 1 : 1;
+    setLogsPage(nextPage);
+    setActiveTab("logs");
   }
 
   async function handleExportLogs() {
@@ -724,12 +748,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       throw new Error(payload.error || "観察ログの保存に失敗しました。");
     }
 
-    await refreshViewerState();
+    const viewer = await refreshViewerState();
     setDraft(getDefaultObservationDraft());
     setLinePaste("");
     setParseStatus(defaultParseStatus);
     setStatusMessage("観察ログを保存しました。");
-    setActiveTab("logs");
+    revealSavedLog(viewer, payload.log);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1693,6 +1717,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               ) : null}
 
               <div className="record-list">
+                {highlightedLogId ? <p className="helper-text">追加した記録が見える位置を表示しています。</p> : null}
                 {filteredLogs.length === 0 ? (
                   <p className="helper-text">{hasLogSearch ? "検索条件に合う観察ログがありません。" : "まだ観察ログがありません。"}</p>
                 ) : null}
@@ -1701,7 +1726,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   const canManage = canManageMemberData(log.memberId);
 
                   return (
-                    <article key={log.id} className="record-card">
+                    <article
+                      key={log.id}
+                      className={highlightedLogId === log.id ? "record-card record-card-highlighted" : "record-card"}
+                    >
                       {editingLogId === log.id ? (
                         <div className="editor-grid">
                           <label>
