@@ -147,6 +147,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
+  const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -760,6 +761,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function startEditingLog(log: ObservationLog) {
+    setOpenRecordMenuKey(null);
     setEditingLogId(log.id);
     setEditingLogDraft({
       observedAt: toLocalInputValue(new Date(log.observedAt)),
@@ -809,6 +811,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleDeleteLog(log: ObservationLog) {
+    setOpenRecordMenuKey(null);
     const confirmed = window.confirm(`${log.species} の観察ログを削除しますか？`);
     if (!confirmed) {
       return;
@@ -838,6 +841,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function startEditingPointEntry(entry: PointEntry) {
+    setOpenRecordMenuKey(null);
     setEditingPointEntryId(entry.id);
     setPointDraft({
       memberId: entry.memberId,
@@ -898,6 +902,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleDeletePointEntry(entry: PointEntry) {
+    setOpenRecordMenuKey(null);
     const confirmed = window.confirm(`${entry.title} を削除しますか？`);
     if (!confirmed) {
       return;
@@ -1642,7 +1647,33 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
                               <h3 className="record-species">{log.species}</h3>
                             </div>
-                            <div className="point-badge">{log.points}P</div>
+                            <div className="record-top-actions">
+                              <div className="point-badge">{log.points}P</div>
+                              {canManage ? (
+                                <div className="card-menu">
+                                  <button
+                                    type="button"
+                                    className="card-menu-button"
+                                    aria-label={`${log.species} の操作を開く`}
+                                    onClick={() =>
+                                      setOpenRecordMenuKey((current) => (current === `log:${log.id}` ? null : `log:${log.id}`))
+                                    }
+                                  >
+                                    ...
+                                  </button>
+                                  {openRecordMenuKey === `log:${log.id}` ? (
+                                    <div className="card-menu-popup">
+                                      <button type="button" className="secondary-button" onClick={() => startEditingLog(log)}>
+                                        編集
+                                      </button>
+                                      <button type="button" className="ghost-button" onClick={() => handleDeleteLog(log)}>
+                                        削除
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
 
                           <p className="record-location">{log.location}</p>
@@ -1671,17 +1702,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                             {log.guidePdfUrl ? <span className="asset-label">PDFあり</span> : null}
                           </div>
-
-                          {canManage ? (
-                            <div className="inline-actions">
-                              <button type="button" className="secondary-button" onClick={() => startEditingLog(log)}>
-                                編集
-                              </button>
-                              <button type="button" className="ghost-button" onClick={() => handleDeleteLog(log)}>
-                                削除
-                              </button>
-                            </div>
-                          ) : null}
                         </>
                       )}
                     </article>
@@ -1801,25 +1821,42 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                           {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
                           <h3 className="record-species">{entry.title}</h3>
                         </div>
-                        <div className="point-badge">{entry.points}P</div>
+                        <div className="record-top-actions">
+                          <div className="point-badge">{entry.points}P</div>
+                          {canManage ? (
+                            <div className="card-menu">
+                              <button
+                                type="button"
+                                className="card-menu-button"
+                                aria-label={`${entry.title} の操作を開く`}
+                                onClick={() =>
+                                  setOpenRecordMenuKey((current) =>
+                                    current === `point-entry:${entry.id}` ? null : `point-entry:${entry.id}`
+                                  )
+                                }
+                              >
+                                ...
+                              </button>
+                              {openRecordMenuKey === `point-entry:${entry.id}` ? (
+                                <div className="card-menu-popup">
+                                  <button type="button" className="secondary-button" onClick={() => startEditingPointEntry(entry)}>
+                                    編集
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ghost-button"
+                                    onClick={() => handleDeletePointEntry(entry)}
+                                  >
+                                    削除
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
 
                       <p className="record-memo">{entry.description || "説明なし"}</p>
-
-                      {canManage ? (
-                        <div className="inline-actions">
-                          <button type="button" className="secondary-button" onClick={() => startEditingPointEntry(entry)}>
-                            編集
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => handleDeletePointEntry(entry)}
-                          >
-                            削除
-                          </button>
-                        </div>
-                      ) : null}
                     </article>
                   );
                 })}

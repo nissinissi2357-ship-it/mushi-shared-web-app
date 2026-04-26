@@ -379,6 +379,12 @@ select {
   align-items: end;
 }
 
+.record-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .ranking-head {
   margin-top: 22px;
 }
@@ -444,6 +450,42 @@ select {
   gap: 12px;
   flex-wrap: wrap;
   align-items: end;
+}
+
+.card-menu {
+  position: relative;
+}
+
+.card-menu-button {
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--forest-900);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.card-menu-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 6;
+  min-width: 120px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 251, 243, 0.98);
+  border: 1px solid rgba(31, 42, 31, 0.1);
+  box-shadow: 0 18px 36px rgba(23, 40, 21, 0.14);
+}
+
+.card-menu-popup button {
+  width: 100%;
 }
 
 .map-field {
