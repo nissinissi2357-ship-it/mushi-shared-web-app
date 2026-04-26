@@ -64,19 +64,24 @@ export function buildSummaries(
 
   return allMembers
     .map((member) => {
-      const memberLogs = allLogs.filter((log) => log.memberId === member.id && isInYear(log.observedAt, summaryYear));
+      const lifetimeLogs = allLogs.filter((log) => log.memberId === member.id);
+      const lifetimePointEntries = allPointEntries.filter((entry) => entry.memberId === member.id);
+      const memberLogs = lifetimeLogs.filter((log) => isInYear(log.observedAt, summaryYear));
       const memberPointEntries = allPointEntries.filter(
         (entry) => entry.memberId === member.id && isInYear(entry.awardedAt, summaryYear)
       );
       const sortedLogs = [...memberLogs].sort((left, right) => right.observedAt.localeCompare(left.observedAt));
       const observationPoints = memberLogs.reduce((sum, log) => sum + log.points, 0);
       const extraPoints = memberPointEntries.reduce((sum, entry) => sum + entry.points, 0);
+      const lifetimeObservationPoints = lifetimeLogs.reduce((sum, log) => sum + log.points, 0);
+      const lifetimeExtraPoints = lifetimePointEntries.reduce((sum, entry) => sum + entry.points, 0);
 
       return {
         memberId: member.id,
         displayName: member.displayName,
         role: member.role,
         totalPoints: observationPoints + extraPoints,
+        lifetimeTotalPoints: lifetimeObservationPoints + lifetimeExtraPoints,
         observationPoints,
         extraPoints,
         recordCount: memberLogs.length,

@@ -39,6 +39,7 @@ export type MemberSummary = {
   displayName: string;
   role: MemberRole;
   totalPoints: number;
+  lifetimeTotalPoints: number;
   observationPoints: number;
   extraPoints: number;
   recordCount: number;

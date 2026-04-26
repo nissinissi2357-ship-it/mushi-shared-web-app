@@ -1228,15 +1228,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               {currentSummary ? (
                 <div className="hero-stats">
-                  <StatCard label="合計ポイント" value={`${currentSummary.totalPoints}P`} />
-                  <StatCard label="観察ポイント" value={`${currentSummary.observationPoints}P`} />
-                  <StatCard label="追加ポイント" value={`${currentSummary.extraPoints}P`} />
-                  <StatCard label="追加回数" value={`${currentSummary.pointEntryCount}件`} />
+                  <StatCard label={`${currentYear}年の合計`} value={`${currentSummary.totalPoints}P`} />
+                  <StatCard label="今年の観察" value={`${currentSummary.observationPoints}P`} />
+                  <StatCard label="通算ポイント" value={`${currentSummary.lifetimeTotalPoints}P`} />
+                  <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
                 </div>
               ) : null}
 
               <div className="home-copy">
-                <p>自分の集計や最近の状況をここで確認できます。</p>
+                <p>合計ポイントは今年1月からの集計です。年が変わると、今年のポイントは0から始まります。</p>
+                <p>通算ポイントでは、これまでの累計ポイントも確認できます。</p>
                 <p>ランキングは隊長と Admin だけが見られます。</p>
               </div>
 
@@ -1278,7 +1279,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                           <p className="ranking-name">{summary.displayName}</p>
                           <p className="ranking-meta">
                             {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
-                            {summary.recordCount}件 / 追加{summary.pointEntryCount}件
+                            {summary.recordCount}件
                           </p>
                         </div>
                         <div className="ranking-points">{summary.totalPoints}P</div>
@@ -2267,6 +2268,9 @@ function buildRankingSummaries(
         displayName: member.displayName,
         role: member.role,
         totalPoints: observationPoints + extraPoints,
+        lifetimeTotalPoints:
+          logs.filter((log) => log.memberId === member.id).reduce((sum, log) => sum + log.points, 0) +
+          pointEntries.filter((entry) => entry.memberId === member.id).reduce((sum, entry) => sum + entry.points, 0),
         observationPoints,
         extraPoints,
         recordCount: memberLogs.length,
