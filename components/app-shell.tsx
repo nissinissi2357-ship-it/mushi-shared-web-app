@@ -1777,7 +1777,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onAddressResolved={(result) =>
                       setDraft((current) => ({
                         ...current,
-                        location: result.region || current.location,
+                        location: mergeResolvedRegion(current.location, result.region),
                         locationDetail: result.locationDetail || current.locationDetail
                       }))
                     }
@@ -2095,7 +2095,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               onAddressResolved={(result) =>
                                 setEditingLogDraft((current) => ({
                                   ...current,
-                                  location: result.region || current.location,
+                                  location: mergeResolvedRegion(current.location, result.region),
                                   locationDetail: result.locationDetail || current.locationDetail
                                 }))
                               }
@@ -3019,6 +3019,26 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function mergeResolvedRegion(currentLocation: string, resolvedRegion: string) {
+  const current = currentLocation.trim();
+  const resolved = resolvedRegion.trim();
+
+  if (!resolved) {
+    return current;
+  }
+
+  if (!current) {
+    return resolved;
+  }
+
+  // Keep an already-selected sub-area inside Kure when reverse geocoding only returns the broad city name.
+  if (resolved === "呉市" && current.startsWith("呉市") && current !== "呉市") {
+    return current;
+  }
+
+  return resolved;
 }
 
 function formatObservationLocation(location: string, locationDetail?: string | null) {
