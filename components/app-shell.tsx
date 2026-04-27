@@ -85,6 +85,7 @@ type InquiryDetailRow = {
   key: string;
   date: string;
   location: string;
+  locationDetail: string;
   count: number;
 };
 
@@ -1304,7 +1305,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     <thead>
                       <tr>
                         <th>日付</th>
-                        <th>場所</th>
+                        <th>地域</th>
+                        <th>詳細な場所</th>
                         <th>件数</th>
                       </tr>
                     </thead>
@@ -1313,6 +1315,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                         <tr key={row.key}>
                           <td>{row.date}</td>
                           <td>{row.location}</td>
+                          <td>{row.locationDetail || "—"}</td>
                           <td>{row.count}件</td>
                         </tr>
                       ))}
@@ -3252,8 +3255,9 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
 
   for (const log of logs) {
     const date = toDateInputValue(log.observedAt);
-    const location = formatObservationLocation(log.location, log.locationDetail);
-    const key = `${date}||${location}`;
+    const location = log.location;
+    const locationDetail = log.locationDetail?.trim() || "";
+    const key = `${date}||${location}||${locationDetail}`;
     const current = grouped.get(key);
 
     if (current) {
@@ -3265,6 +3269,7 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
       key,
       date,
       location,
+      locationDetail,
       count: 1
     });
   }
@@ -3275,7 +3280,12 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
       return dateComparison;
     }
 
-    return left.location.localeCompare(right.location, "ja-JP");
+    const locationComparison = left.location.localeCompare(right.location, "ja-JP");
+    if (locationComparison !== 0) {
+      return locationComparison;
+    }
+
+    return left.locationDetail.localeCompare(right.locationDetail, "ja-JP");
   });
 }
 
