@@ -124,6 +124,7 @@ export async function listInquiryObservations(): Promise<InquiryObservation[]> {
       id: String(row.id),
       observedAt: String(row.observed_at),
       location: String(row.location),
+      locationDetail: String(row.location_detail ?? ""),
       species: String(row.species)
     }));
   } catch {
