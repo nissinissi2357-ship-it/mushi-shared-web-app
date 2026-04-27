@@ -184,6 +184,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isInquiryLoading, setIsInquiryLoading] = useState(false);
   const [selectedInquirySpecies, setSelectedInquirySpecies] = useState("");
   const [selectedInquiryYear, setSelectedInquiryYear] = useState("");
+  const [inquirySpeciesPage, setInquirySpeciesPage] = useState(1);
   const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
@@ -276,6 +277,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     [filteredInquiryLogs]
   );
 
+  const inquirySpeciesPageSize = 10;
+  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquirySpeciesList.length / inquirySpeciesPageSize));
+  const paginatedInquirySpecies = inquirySpeciesList.slice(
+    (inquirySpeciesPage - 1) * inquirySpeciesPageSize,
+    inquirySpeciesPage * inquirySpeciesPageSize
+  );
+
   const selectedInquirySpeciesLogs = useMemo(
     () => filteredInquiryLogs.filter((log) => log.species === selectedInquirySpecies),
     [filteredInquiryLogs, selectedInquirySpecies]
@@ -353,9 +361,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }, [rankingPeriod, rankingPeriodOptions]);
 
   useEffect(() => {
-    setSelectedInquirySpecies((current) =>
-      current && inquirySpeciesList.includes(current) ? current : (inquirySpeciesList[0] ?? "")
-    );
+    setSelectedInquirySpecies((current) => (current && inquirySpeciesList.includes(current) ? current : ""));
   }, [inquirySpeciesList]);
 
   useEffect(() => {
@@ -363,6 +369,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       current && inquiryYearOptions.includes(current) ? current : (inquiryYearOptions[0] ?? "")
     );
   }, [inquiryYearOptions]);
+
+  useEffect(() => {
+    setInquirySpeciesPage(1);
+  }, [inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+
+  useEffect(() => {
+    setInquirySpeciesPage((current) => Math.min(current, totalInquirySpeciesPages));
+  }, [totalInquirySpeciesPages]);
 
   useEffect(() => {
     if (!currentMember) {
@@ -1201,6 +1215,102 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 閉じる
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {selectedInquirySpecies ? (
+        <div className="alert-overlay" onClick={() => setSelectedInquirySpecies("")}>
+          <section className="alert-panel inquiry-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="inquiry-panel-head">
+              <div>
+                <p className="section-label">Profile</p>
+                <h2>{selectedInquirySpecies}</h2>
+              </div>
+
+              <div className="inline-actions">
+                <label className="inquiry-year-field">
+                  表示する年
+                  <select value={selectedInquiryYear} onChange={(event) => setSelectedInquiryYear(event.target.value)}>
+                    {inquiryYearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}年
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="ghost-button" onClick={() => setSelectedInquirySpecies("")}>
+                  閉じる
+                </button>
+              </div>
+            </div>
+
+            {selectedInquiryYear ? (
+              <p className="helper-text">{selectedInquiryYear}年の記録は {selectedInquiryYearLogs.length}件です。</p>
+            ) : null}
+
+            <div className="table-scroll inquiry-calendar-scroll">
+              <table className="inquiry-calendar">
+                <thead>
+                  <tr>
+                    <th>地域</th>
+                    {Array.from({ length: 12 }, (_, index) => (
+                      <th key={index + 1}>{index + 1}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {inquiryLocationRows.map((row) => (
+                    <tr key={row.location}>
+                      <th>{row.location}</th>
+                      {row.monthCounts.map((count, index) => (
+                        <td
+                          key={`${row.location}-${index + 1}`}
+                          className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active" : "inquiry-month-cell"}
+                        >
+                          {count > 0 ? count : ""}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <section className="inquiry-detail-block">
+              <div className="inquiry-panel-head">
+                <div>
+                  <p className="section-label">Details</p>
+                  <h4>詳細記録</h4>
+                </div>
+                <p className="helper-text">同じ日付・同じ場所の記録は件数でまとめています。</p>
+              </div>
+
+              {inquiryDetailRows.length === 0 ? (
+                <p className="helper-text">この年の記録はありません。</p>
+              ) : (
+                <div className="table-scroll">
+                  <table className="inquiry-table inquiry-detail-table">
+                    <thead>
+                      <tr>
+                        <th>日付</th>
+                        <th>場所</th>
+                        <th>件数</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inquiryDetailRows.map((row) => (
+                        <tr key={row.key}>
+                          <td>{row.date}</td>
+                          <td>{row.location}</td>
+                          <td>{row.count}件</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </section>
         </div>
       ) : null}
@@ -2184,128 +2294,57 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               ) : null}
 
               {!isInquiryLoading && inquirySpeciesList.length > 0 ? (
-                <div className="inquiry-layout">
-                  <section className="inquiry-species-panel">
-                    <div className="inquiry-panel-head">
-                      <div>
-                        <p className="section-label">Species</p>
-                        <h3>種類一覧</h3>
-                      </div>
-                      <p className="helper-text">50音順に並んでいます。</p>
+                <section className="inquiry-species-panel">
+                  <div className="inquiry-panel-head">
+                    <div>
+                      <p className="section-label">Species</p>
+                      <h3>種類一覧</h3>
                     </div>
+                    <p className="helper-text">50音順に並んでいます。種類名を押すと詳細が開きます。</p>
+                  </div>
 
-                    <div className="inquiry-species-list">
-                      {inquirySpeciesList.map((species) => (
-                        <button
-                          key={species}
-                          type="button"
-                          className={species === selectedInquirySpecies ? "species-chip species-chip-active" : "species-chip"}
-                          onClick={() => setSelectedInquirySpecies(species)}
-                        >
-                          {species}
-                        </button>
-                      ))}
+                  <div className="inquiry-species-rows">
+                    {paginatedInquirySpecies.map((species) => (
+                      <button
+                        key={species}
+                        type="button"
+                        className="inquiry-species-row"
+                        onClick={() => setSelectedInquirySpecies(species)}
+                      >
+                        <span>{species}</span>
+                        <span className="inquiry-row-arrow">›</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pagination-bar pagination-bar-bottom">
+                    <p className="helper-text">
+                      {inquirySpeciesList.length}種類中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
+                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquirySpeciesList.length)}種類を表示
+                    </p>
+                    <div className="pagination-actions logs-pagination-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setInquirySpeciesPage((current) => Math.max(1, current - 1))}
+                        disabled={inquirySpeciesPage === 1}
+                      >
+                        前の10件
+                      </button>
+                      <span className="pagination-label">
+                        {inquirySpeciesPage} / {totalInquirySpeciesPages}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setInquirySpeciesPage((current) => Math.min(totalInquirySpeciesPages, current + 1))}
+                        disabled={inquirySpeciesPage === totalInquirySpeciesPages}
+                      >
+                        次の10件
+                      </button>
                     </div>
-                  </section>
-
-                  <section className="inquiry-profile-panel">
-                    {selectedInquirySpecies ? (
-                      <>
-                        <div className="inquiry-panel-head">
-                          <div>
-                            <p className="section-label">Profile</p>
-                            <h3>{selectedInquirySpecies}</h3>
-                          </div>
-
-                          <label className="inquiry-year-field">
-                            表示する年
-                            <select
-                              value={selectedInquiryYear}
-                              onChange={(event) => setSelectedInquiryYear(event.target.value)}
-                            >
-                              {inquiryYearOptions.map((year) => (
-                                <option key={year} value={year}>
-                                  {year}年
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-
-                        {selectedInquiryYear ? (
-                          <p className="helper-text">
-                            {selectedInquiryYear}年の記録は {selectedInquiryYearLogs.length}件です。
-                          </p>
-                        ) : null}
-
-                        <div className="table-scroll inquiry-calendar-scroll">
-                          <table className="inquiry-calendar">
-                            <thead>
-                              <tr>
-                                <th>地域</th>
-                                {Array.from({ length: 12 }, (_, index) => (
-                                  <th key={index + 1}>{index + 1}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {inquiryLocationRows.map((row) => (
-                                <tr key={row.location}>
-                                  <th>{row.location}</th>
-                                  {row.monthCounts.map((count, index) => (
-                                    <td
-                                      key={`${row.location}-${index + 1}`}
-                                      className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active" : "inquiry-month-cell"}
-                                    >
-                                      {count > 0 ? count : ""}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <section className="inquiry-detail-block">
-                          <div className="inquiry-panel-head">
-                            <div>
-                              <p className="section-label">Details</p>
-                              <h4>詳細記録</h4>
-                            </div>
-                            <p className="helper-text">同じ日付・同じ場所の記録は件数でまとめています。</p>
-                          </div>
-
-                          {inquiryDetailRows.length === 0 ? (
-                            <p className="helper-text">この年の記録はありません。</p>
-                          ) : (
-                            <div className="table-scroll">
-                              <table className="inquiry-table inquiry-detail-table">
-                                <thead>
-                                  <tr>
-                                    <th>日付</th>
-                                    <th>場所</th>
-                                    <th>件数</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {inquiryDetailRows.map((row) => (
-                                    <tr key={row.key}>
-                                      <td>{row.date}</td>
-                                      <td>{row.location}</td>
-                                      <td>{row.count}件</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </section>
-                      </>
-                    ) : (
-                      <p className="helper-text">表示できる種類がありません。</p>
-                    )}
-                  </section>
-                </div>
+                  </div>
+                </section>
               ) : null}
             </section>
           ) : null}

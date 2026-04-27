@@ -582,6 +582,32 @@ select {
   gap: 10px;
 }
 
+.inquiry-species-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.inquiry-species-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(31, 42, 31, 0.1);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--forest-900);
+  font-weight: 700;
+  text-align: left;
+}
+
+.inquiry-row-arrow {
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
 .species-chip {
   padding: 10px 14px;
   border-radius: 999px;
@@ -599,6 +625,12 @@ select {
 
 .inquiry-year-field {
   min-width: 160px;
+}
+
+.inquiry-dialog {
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
 }
 
 .inquiry-calendar {
