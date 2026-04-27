@@ -76,9 +76,13 @@ type RankingPeriodOption = {
 };
 
 type InquiryLocationRow = {
+  key: string;
   location: string;
+  displayLocation: string;
   monthCounts: number[];
   totalCount: number;
+  level: number;
+  isExpandable?: boolean;
 };
 
 type InquiryDetailRow = {
@@ -189,6 +193,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [selectedInquirySpecies, setSelectedInquirySpecies] = useState("");
   const [selectedInquiryYear, setSelectedInquiryYear] = useState("");
   const [inquirySpeciesPage, setInquirySpeciesPage] = useState(1);
+  const [isInquiryKureExpanded, setIsInquiryKureExpanded] = useState(false);
   const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
@@ -312,8 +317,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   );
 
   const inquiryLocationRows = useMemo(
-    () => buildInquiryLocationRows(selectedInquiryYearLogs),
-    [selectedInquiryYearLogs]
+    () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
+    [isInquiryKureExpanded, selectedInquiryYearLogs]
   );
 
   const inquiryDetailRows = useMemo(
@@ -375,6 +380,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       current && inquiryYearOptions.includes(current) ? current : (inquiryYearOptions[0] ?? "")
     );
   }, [inquiryYearOptions]);
+
+  useEffect(() => {
+    setIsInquiryKureExpanded(false);
+  }, [selectedInquirySpecies, selectedInquiryYear]);
 
   useEffect(() => {
     setInquirySpeciesPage(1);
@@ -1268,20 +1277,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     {Array.from({ length: 12 }, (_, index) => (
                       <th key={index + 1}>{index + 1}</th>
                     ))}
+                    <th>合計</th>
                   </tr>
                 </thead>
                 <tbody>
                   {inquiryLocationRows.map((row) => (
-                    <tr key={row.location}>
-                      <th>{row.location}</th>
+                    <tr key={row.key}>
+                      <th className={row.level > 0 ? "inquiry-location-label inquiry-location-label-child" : "inquiry-location-label"}>
+                        {row.isExpandable ? (
+                          <button
+                            type="button"
+                            className="inquiry-toggle-button"
+                            onClick={() => setIsInquiryKureExpanded((current) => !current)}
+                            aria-expanded={isInquiryKureExpanded}
+                          >
+                            <span>{isInquiryKureExpanded ? "▼" : "▶"}</span>
+                            <span>{row.displayLocation}</span>
+                          </button>
+                        ) : (
+                          row.displayLocation
+                        )}
+                      </th>
                       {row.monthCounts.map((count, index) => (
                         <td
-                          key={`${row.location}-${index + 1}`}
+                          key={`${row.key}-${index + 1}`}
                           className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active" : "inquiry-month-cell"}
                         >
                           {count > 0 ? count : ""}
                         </td>
                       ))}
+                      <td className="inquiry-total-cell">{row.totalCount}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3222,7 +3247,7 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
   );
 }
 
-function buildInquiryLocationRows(logs: InquiryObservation[]): InquiryLocationRow[] {
+function buildInquiryLocationRows(logs: InquiryObservation[], isKureExpanded: boolean): InquiryLocationRow[] {
   const grouped = new Map<string, InquiryLocationRow>();
 
   for (const log of logs) {
@@ -3230,9 +3255,12 @@ function buildInquiryLocationRows(logs: InquiryObservation[]): InquiryLocationRo
     const current =
       grouped.get(log.location) ??
       {
+        key: log.location,
         location: log.location,
+        displayLocation: log.location,
         monthCounts: Array.from({ length: 12 }, () => 0),
-        totalCount: 0
+        totalCount: 0,
+        level: 0
       };
 
     current.monthCounts[monthIndex] += 1;
@@ -3240,7 +3268,7 @@ function buildInquiryLocationRows(logs: InquiryObservation[]): InquiryLocationRo
     grouped.set(log.location, current);
   }
 
-  return [...grouped.values()].sort((left, right) => {
+  const sortedRows = [...grouped.values()].sort((left, right) => {
     const countComparison = right.totalCount - left.totalCount;
     if (countComparison !== 0) {
       return countComparison;
@@ -3248,6 +3276,56 @@ function buildInquiryLocationRows(logs: InquiryObservation[]): InquiryLocationRo
 
     return left.location.localeCompare(right.location, "ja-JP");
   });
+
+  const kureRows = sortedRows.filter((row) => row.location.startsWith("呉市"));
+  const kureChildren = kureRows.filter((row) => row.location !== "呉市");
+  const nonKureRows = sortedRows.filter((row) => !row.location.startsWith("呉市"));
+
+  if (kureRows.length === 0) {
+    return nonKureRows;
+  }
+
+  const kureSummary: InquiryLocationRow = {
+    key: "kure-summary",
+    location: "呉市",
+    displayLocation: "呉市",
+    monthCounts: Array.from({ length: 12 }, (_, index) =>
+      kureRows.reduce((sum, row) => sum + row.monthCounts[index], 0)
+    ),
+    totalCount: kureRows.reduce((sum, row) => sum + row.totalCount, 0),
+    level: 0,
+    isExpandable: kureChildren.length > 0
+  };
+
+  const topLevelRows = [...nonKureRows, kureSummary].sort((left, right) => {
+    const countComparison = right.totalCount - left.totalCount;
+    if (countComparison !== 0) {
+      return countComparison;
+    }
+
+    return left.location.localeCompare(right.location, "ja-JP");
+  });
+
+  if (!isKureExpanded || kureChildren.length === 0) {
+    return topLevelRows;
+  }
+
+  const normalizedChildren = kureChildren.map((row) => ({
+    ...row,
+    displayLocation: row.location.replace(/^呉市/, ""),
+    level: 1
+  }));
+
+  const expandedRows: InquiryLocationRow[] = [];
+
+  for (const row of topLevelRows) {
+    expandedRows.push(row);
+    if (row.key === "kure-summary") {
+      expandedRows.push(...normalizedChildren);
+    }
+  }
+
+  return expandedRows;
 }
 
 function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] {

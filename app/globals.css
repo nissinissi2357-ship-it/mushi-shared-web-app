@@ -653,6 +653,32 @@ select {
   min-width: 120px;
 }
 
+.inquiry-location-label {
+  font-weight: 700;
+}
+
+.inquiry-location-label-child {
+  padding-left: 28px;
+  font-weight: 600;
+}
+
+.inquiry-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.inquiry-total-cell {
+  font-weight: 700;
+}
+
 .inquiry-calendar th {
   background: rgba(236, 241, 231, 0.92);
 }
