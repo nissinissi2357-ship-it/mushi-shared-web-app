@@ -12,6 +12,7 @@ export const fallbackLogs: ObservationLog[] = [
     memberId: "member-001",
     observedAt: "2026-04-19T16:57:00+09:00",
     location: "呉市焼山",
+    locationDetail: "焼山中央",
     species: "セボシジョウカイ",
     points: 1,
     scoringMemo: "焼山 1P"
@@ -21,6 +22,7 @@ export const fallbackLogs: ObservationLog[] = [
     memberId: "member-001",
     observedAt: "2026-04-19T17:01:00+09:00",
     location: "呉市旧呉市",
+    locationDetail: "本通",
     species: "クワキヨコバイ",
     points: 8,
     scoringMemo: "呉市1年ぶり、旧呉市初、呉市、広島県 8P"
@@ -29,7 +31,8 @@ export const fallbackLogs: ObservationLog[] = [
     id: "log-003",
     memberId: "member-002",
     observedAt: "2026-04-18T11:10:00+09:00",
-    location: "東広島",
+    location: "東広島市",
+    locationDetail: "西条町寺家",
     species: "アオスジアゲハ",
     points: 2,
     scoringMemo: "東広島 2P"

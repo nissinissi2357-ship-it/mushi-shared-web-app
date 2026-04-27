@@ -13,6 +13,7 @@ create table if not exists public.observation_logs (
   member_id uuid not null references public.club_members(id) on delete cascade,
   observed_at timestamptz not null,
   location text not null,
+  location_detail text not null default '',
   latitude double precision,
   longitude double precision,
   species text not null,

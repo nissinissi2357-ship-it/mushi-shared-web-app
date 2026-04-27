@@ -37,6 +37,7 @@ type ObservationRow = {
   member_id: string;
   observed_at: string;
   location: string;
+  location_detail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   species: string;
@@ -112,7 +113,7 @@ export async function listInquiryObservations(): Promise<InquiryObservation[]> {
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("observation_logs")
-      .select("id, observed_at, location, species")
+      .select("id, observed_at, location, location_detail, species")
       .order("observed_at", { ascending: false });
 
     if (error) {
@@ -131,6 +132,7 @@ export async function listInquiryObservations(): Promise<InquiryObservation[]> {
         id: log.id,
         observedAt: log.observedAt,
         location: log.location,
+        locationDetail: log.locationDetail,
         species: log.species
       }))
       .sort((left, right) => right.observedAt.localeCompare(left.observedAt));
@@ -341,17 +343,18 @@ export async function insertObservation(input: ObservationInsertInput, member: M
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("observation_logs")
-    .insert({
-      member_id: member.id,
-      observed_at: input.observedAt,
-      location: input.location,
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
-      species: input.species,
-      points: input.points,
-      scoring_memo: input.scoringMemo
-    })
-    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+      .insert({
+        member_id: member.id,
+        observed_at: input.observedAt,
+        location: input.location,
+        location_detail: input.locationDetail ?? "",
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
+        species: input.species,
+        points: input.points,
+        scoring_memo: input.scoringMemo
+      })
+    .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .single();
 
   if (error) {
@@ -379,6 +382,7 @@ export async function updateObservation(
     .update({
       observed_at: input.observedAt,
       location: input.location,
+      location_detail: input.locationDetail ?? "",
       latitude: input.latitude ?? null,
       longitude: input.longitude ?? null,
       species: input.species,
@@ -386,7 +390,7 @@ export async function updateObservation(
       scoring_memo: input.scoringMemo
     })
     .eq("id", observationId)
-    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+    .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .single();
 
   if (error) {
@@ -492,7 +496,7 @@ export async function listExportLogs(
   let query = supabase
     .from("observation_logs")
     .select(
-      "id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path, club_members!inner(display_name)"
+      "id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path, club_members!inner(display_name)"
     )
     .order("observed_at", { ascending: false });
 
@@ -549,11 +553,11 @@ async function getLogsForMember(memberId: string, role: MemberRole): Promise<Obs
     role === "captain" || role === "admin"
       ? supabase
           .from("observation_logs")
-          .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+          .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
           .order("observed_at", { ascending: false })
       : supabase
           .from("observation_logs")
-          .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+          .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
           .eq("member_id", memberId)
           .order("observed_at", { ascending: false });
 
@@ -597,7 +601,7 @@ async function getAllSummaries() {
     supabase.from("club_members").select("id, display_name, role").order("created_at", { ascending: true }),
     supabase
       .from("observation_logs")
-      .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+      .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
       .order("observed_at", { ascending: false }),
     supabase
       .from("point_entries")
@@ -620,7 +624,7 @@ async function getObservationById(observationId: string): Promise<ObservationRow
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("observation_logs")
-    .select("id, member_id, observed_at, location, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
+    .select("id, member_id, observed_at, location, location_detail, latitude, longitude, species, points, scoring_memo, image_path, guide_pdf_path")
     .eq("id", observationId)
     .maybeSingle();
 
@@ -681,6 +685,7 @@ function mapLogRow(row: ObservationRow): ObservationLog {
     memberId: row.member_id,
     observedAt: row.observed_at,
     location: row.location,
+    locationDetail: row.location_detail ?? "",
     latitude: row.latitude ?? null,
     longitude: row.longitude ?? null,
     species: row.species,

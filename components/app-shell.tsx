@@ -11,6 +11,7 @@ import {
 } from "react";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
+import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
 import type {
   InquiryObservation,
@@ -42,6 +43,7 @@ type AppShellProps = {
 type DraftObservation = {
   observedAt: string;
   location: string;
+  locationDetail: string;
   latitude: string;
   longitude: string;
   species: string;
@@ -99,6 +101,7 @@ function getDefaultObservationDraft(): DraftObservation {
   return {
     observedAt: toLocalInputValue(),
     location: "",
+    locationDetail: "",
     latitude: "",
     longitude: "",
     species: "",
@@ -210,7 +213,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         ? (log: ObservationLog) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
         : null,
       locationQuery
-        ? (log: ObservationLog) => log.location.toLocaleLowerCase("ja-JP").includes(locationQuery)
+        ? (log: ObservationLog) =>
+            formatObservationLocation(log.location, log.locationDetail).toLocaleLowerCase("ja-JP").includes(locationQuery)
         : null,
       logSearchDate ? (log: ObservationLog) => toDateInputValue(log.observedAt) === logSearchDate : null
     ].filter(Boolean) as Array<(log: ObservationLog) => boolean>;
@@ -255,7 +259,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         ? (log: InquiryObservation) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
         : null,
       locationQuery
-        ? (log: InquiryObservation) => log.location.toLocaleLowerCase("ja-JP").includes(locationQuery)
+        ? (log: InquiryObservation) =>
+            formatObservationLocation(log.location, log.locationDetail).toLocaleLowerCase("ja-JP").includes(locationQuery)
         : null,
       inquirySearchDate ? (log: InquiryObservation) => toDateInputValue(log.observedAt) === inquirySearchDate : null
     ].filter(Boolean) as Array<(log: InquiryObservation) => boolean>;
@@ -623,6 +628,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setDraft((current) => ({
       observedAt: parsed.observedAt || current.observedAt,
       location: parsed.location || current.location,
+      locationDetail: current.locationDetail,
       latitude: current.latitude,
       longitude: current.longitude,
       species: parsed.species || current.species,
@@ -633,7 +639,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const found = [
       parsed.species ? `種名: ${parsed.species}` : "",
       parsed.points !== null ? `ポイント: ${parsed.points}P` : "",
-      parsed.location ? `場所: ${parsed.location}` : "",
+      parsed.location ? `観察地域: ${parsed.location}` : "",
       parsed.observedAt ? `日時: ${parsed.observedAt}` : ""
     ].filter(Boolean);
 
@@ -897,6 +903,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       body: JSON.stringify({
         observedAt: new Date(nextDraft.observedAt).toISOString(),
         location: nextDraft.location,
+        locationDetail: nextDraft.locationDetail,
         latitude: nextDraft.latitude ? Number(nextDraft.latitude) : null,
         longitude: nextDraft.longitude ? Number(nextDraft.longitude) : null,
         species: nextDraft.species,
@@ -953,6 +960,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const nextDraft: DraftObservation = {
       observedAt: parsed.observedAt || draft.observedAt,
       location: parsed.location || draft.location,
+      locationDetail: draft.locationDetail,
       latitude: draft.latitude,
       longitude: draft.longitude,
       species: parsed.species || draft.species,
@@ -962,7 +970,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     const missing = [
       !nextDraft.species ? "種名" : "",
-      !nextDraft.location ? "場所" : "",
+      !nextDraft.location ? "観察地域" : "",
       !nextDraft.points ? "ポイント" : ""
     ].filter(Boolean);
 
@@ -989,6 +997,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setEditingLogDraft({
       observedAt: toLocalInputValue(new Date(log.observedAt)),
       location: log.location,
+      locationDetail: log.locationDetail || "",
       latitude: log.latitude === null || log.latitude === undefined ? "" : String(log.latitude),
       longitude: log.longitude === null || log.longitude === undefined ? "" : String(log.longitude),
       species: log.species,
@@ -1010,6 +1019,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           body: JSON.stringify({
             observedAt: new Date(editingLogDraft.observedAt).toISOString(),
             location: editingLogDraft.location,
+            locationDetail: editingLogDraft.locationDetail,
             latitude: editingLogDraft.latitude ? Number(editingLogDraft.latitude) : null,
             longitude: editingLogDraft.longitude ? Number(editingLogDraft.longitude) : null,
             species: editingLogDraft.species,
@@ -1727,13 +1737,28 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </label>
 
                 <label>
-                  場所
-                  <input
-                    type="text"
-                    placeholder="例: 呉市焼山"
+                  観察地域
+                  <select
                     value={draft.location}
                     onChange={(event) => setDraft((current) => ({ ...current, location: event.target.value }))}
                     required
+                  >
+                    <option value="">一覧から選んでください</option>
+                    {LOCATION_OPTIONS.map((location) => (
+                      <option key={location} value={location}>
+                        {location}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  詳細な場所
+                  <input
+                    type="text"
+                    placeholder="例: 焼山中央、西条町寺家"
+                    value={draft.locationDetail}
+                    onChange={(event) => setDraft((current) => ({ ...current, locationDetail: event.target.value }))}
                   />
                 </label>
 
@@ -1741,11 +1766,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <MapCoordinatePicker
                     latitude={draft.latitude}
                     longitude={draft.longitude}
+                    locationDetail={draft.locationDetail}
                     onChange={(coords) =>
                       setDraft((current) => ({
                         ...current,
                         latitude: coords.latitude,
                         longitude: coords.longitude
+                      }))
+                    }
+                    onAddressResolved={(result) =>
+                      setDraft((current) => ({
+                        ...current,
+                        location: result.region || current.location,
+                        locationDetail: result.locationDetail || current.locationDetail
                       }))
                     }
                   />
@@ -2021,12 +2054,29 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             />
                           </label>
                           <label>
-                            場所
-                            <input
-                              type="text"
+                            観察地域
+                            <select
                               value={editingLogDraft.location}
                               onChange={(event) =>
                                 setEditingLogDraft((current) => ({ ...current, location: event.target.value }))
+                              }
+                              required
+                            >
+                              <option value="">一覧から選んでください</option>
+                              {LOCATION_OPTIONS.map((location) => (
+                                <option key={location} value={location}>
+                                  {location}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            詳細な場所
+                            <input
+                              type="text"
+                              value={editingLogDraft.locationDetail}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, locationDetail: event.target.value }))
                               }
                             />
                           </label>
@@ -2034,11 +2084,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <MapCoordinatePicker
                               latitude={editingLogDraft.latitude}
                               longitude={editingLogDraft.longitude}
+                              locationDetail={editingLogDraft.locationDetail}
                               onChange={(coords) =>
                                 setEditingLogDraft((current) => ({
                                   ...current,
                                   latitude: coords.latitude,
                                   longitude: coords.longitude
+                                }))
+                              }
+                              onAddressResolved={(result) =>
+                                setEditingLogDraft((current) => ({
+                                  ...current,
+                                  location: result.region || current.location,
+                                  locationDetail: result.locationDetail || current.locationDetail
                                 }))
                               }
                             />
@@ -2123,7 +2181,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             </div>
                           </div>
 
-                          <p className="record-location">{log.location}</p>
+                          <p className="record-location">{formatObservationLocation(log.location, log.locationDetail)}</p>
                           {log.latitude !== null && log.latitude !== undefined && log.longitude !== null && log.longitude !== undefined ? (
                             <p className="record-meta">
                               緯度 {log.latitude.toFixed(5)} / 経度 {log.longitude.toFixed(5)} ・{" "}
@@ -2522,17 +2580,22 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 function MapCoordinatePicker({
   latitude,
   longitude,
-  onChange
+  locationDetail,
+  onChange,
+  onAddressResolved
 }: {
   latitude: string;
   longitude: string;
+  locationDetail?: string;
   onChange: (coords: { latitude: string; longitude: string }) => void;
+  onAddressResolved?: (result: { region: string; locationDetail: string }) => void;
 }) {
   const defaultCenter = parseCoordinates(latitude, longitude) ?? { latitude: 34.3963, longitude: 132.4596 };
   const [center, setCenter] = useState(defaultCenter);
   const [zoom, setZoom] = useState(11);
   const [viewportSize, setViewportSize] = useState(320);
   const [isLocating, setIsLocating] = useState(false);
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const mapRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -2639,10 +2702,8 @@ function MapCoordinatePicker({
     const x = ((event.clientX - rect.left) / rect.width) * mapSize;
     const y = ((event.clientY - rect.top) / rect.height) * mapSize;
     const coords = worldPixelsToLatLng(topLeftWorld.x + x, topLeftWorld.y + y, zoom);
-    onChange({
-      latitude: coords.latitude.toFixed(6),
-      longitude: coords.longitude.toFixed(6)
-    });
+    applyCoordinates(coords.latitude, coords.longitude);
+    void resolveAddress(coords.latitude, coords.longitude);
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -2768,6 +2829,52 @@ function MapCoordinatePicker({
     setCenter(normalized);
   }
 
+  async function resolveAddress(nextLatitude: number, nextLongitude: number) {
+    setIsResolvingAddress(true);
+
+    try {
+      const response = await fetch(
+        `/api/geocode/reverse?lat=${encodeURIComponent(nextLatitude.toFixed(6))}&lon=${encodeURIComponent(nextLongitude.toFixed(6))}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      const payload = (await response.json()) as {
+        region?: string;
+        locationDetail?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "住所の取得に失敗しました。");
+      }
+
+      onAddressResolved?.({
+        region: payload.region || "",
+        locationDetail: payload.locationDetail || ""
+      });
+
+      if (payload.region || payload.locationDetail) {
+        const found = [
+          payload.region ? `地域: ${payload.region}` : "",
+          payload.locationDetail ? `詳細: ${payload.locationDetail}` : ""
+        ].filter(Boolean);
+        setLocationMessage(`住所候補を入れました。${found.join(" / ")}`);
+      } else {
+        setLocationMessage("座標は入りました。観察地域は必要に応じて手で選んでください。");
+      }
+    } catch (error) {
+      setLocationMessage(error instanceof Error ? error.message : "住所の取得に失敗しました。");
+    } finally {
+      setIsResolvingAddress(false);
+    }
+  }
+
   function handleUseCurrentLocation() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setLocationMessage("この端末では現在地を取得できません。");
@@ -2781,7 +2888,7 @@ function MapCoordinatePicker({
       (position) => {
         applyCoordinates(position.coords.latitude, position.coords.longitude);
         setZoom((current) => Math.max(current, 15));
-        setLocationMessage("現在地を入れました。");
+        void resolveAddress(position.coords.latitude, position.coords.longitude);
         setIsLocating(false);
       },
       () => {
@@ -2817,7 +2924,10 @@ function MapCoordinatePicker({
         <button
           type="button"
           className="ghost-button"
-          onClick={() => onChange({ latitude: "", longitude: "" })}
+          onClick={() => {
+            onChange({ latitude: "", longitude: "" });
+            setLocationMessage("");
+          }}
         >
           座標をクリア
         </button>
@@ -2825,7 +2935,7 @@ function MapCoordinatePicker({
 
       <div
         ref={mapRef}
-        className="map-canvas"
+      className="map-canvas"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -2867,6 +2977,7 @@ function MapCoordinatePicker({
       </div>
 
       {locationMessage ? <p className="helper-text">{locationMessage}</p> : null}
+      {isResolvingAddress ? <p className="helper-text">住所候補を確認しています...</p> : null}
 
       <div className="coordinate-inputs">
         <label>
@@ -2876,7 +2987,10 @@ function MapCoordinatePicker({
             step="0.000001"
             placeholder="例: 34.396300"
             value={latitude}
-            onChange={(event) => onChange({ latitude: event.target.value, longitude })}
+            onChange={(event) => {
+              onChange({ latitude: event.target.value, longitude });
+              setLocationMessage("");
+            }}
           />
         </label>
         <label>
@@ -2886,10 +3000,14 @@ function MapCoordinatePicker({
             step="0.000001"
             placeholder="例: 132.459600"
             value={longitude}
-            onChange={(event) => onChange({ latitude, longitude: event.target.value })}
+            onChange={(event) => {
+              onChange({ latitude, longitude: event.target.value });
+              setLocationMessage("");
+            }}
           />
         </label>
       </div>
+      {locationDetail ? <p className="helper-text">詳細場所: {locationDetail}</p> : null}
     </div>
   );
 }
@@ -2901,6 +3019,11 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function formatObservationLocation(location: string, locationDetail?: string | null) {
+  const detail = locationDetail?.trim();
+  return detail ? `${location} / ${detail}` : location;
 }
 
 function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: number; recordCount: number }> }) {
@@ -3012,7 +3135,8 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
 
   for (const log of logs) {
     const date = toDateInputValue(log.observedAt);
-    const key = `${date}||${log.location}`;
+    const location = formatObservationLocation(log.location, log.locationDetail);
+    const key = `${date}||${location}`;
     const current = grouped.get(key);
 
     if (current) {
@@ -3023,7 +3147,7 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
     grouped.set(key, {
       key,
       date,
-      location: log.location,
+      location,
       count: 1
     });
   }

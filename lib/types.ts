@@ -12,6 +12,7 @@ export type ObservationLog = {
   memberId: string;
   observedAt: string;
   location: string;
+  locationDetail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   species: string;
@@ -29,6 +30,7 @@ export type InquiryObservation = {
   id: string;
   observedAt: string;
   location: string;
+  locationDetail?: string | null;
   species: string;
 };
 
@@ -59,6 +61,7 @@ export type TabId = "home" | "record" | "logs" | "inquiry" | "points";
 export type ObservationInsertInput = {
   observedAt: string;
   location: string;
+  locationDetail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   species: string;

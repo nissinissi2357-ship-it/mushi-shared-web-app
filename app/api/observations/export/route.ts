@@ -15,6 +15,7 @@ function buildCsv(
     observedAt: string;
     memberDisplayName: string;
     location: string;
+    locationDetail?: string | null;
     latitude?: number | null;
     longitude?: number | null;
     species: string;
@@ -27,7 +28,8 @@ function buildCsv(
   const headers = [
     "観察日時",
     "隊員",
-    "場所",
+    "観察地域",
+    "詳細場所",
     "緯度",
     "経度",
     "種名",
@@ -44,6 +46,7 @@ function buildCsv(
         row.observedAt,
         row.memberDisplayName,
         row.location,
+        row.locationDetail || "",
         row.latitude ?? "",
         row.longitude ?? "",
         row.species,

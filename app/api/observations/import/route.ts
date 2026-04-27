@@ -1,4 +1,5 @@
 import { getViewerFromSession, insertObservation, listMembers } from "@/lib/data";
+import { isKnownLocationOption } from "@/lib/locations";
 import { readSession } from "@/lib/session";
 import type { Member } from "@/lib/types";
 
@@ -6,6 +7,8 @@ const HEADER_ALIASES: Record<string, string> = {
   "観察日時": "observedAt",
   "隊員": "memberDisplayName",
   "場所": "location",
+  "観察地域": "location",
+  "詳細場所": "locationDetail",
   "緯度": "latitude",
   "経度": "longitude",
   "種名": "species",
@@ -98,10 +101,15 @@ function parseRows(csvText: string) {
       throw new Error(`${index + 2}行目に必須項目の不足があります。`);
     }
 
+    if (!isKnownLocationOption(record.location)) {
+      throw new Error(`${index + 2}行目の観察地域が一覧にありません。`);
+    }
+
     return {
       observedAt: record.observedAt,
       memberDisplayName: record.memberDisplayName,
       location: record.location,
+      locationDetail: record.locationDetail || "",
       latitude: parseOptionalNumber(record.latitude),
       longitude: parseOptionalNumber(record.longitude),
       species: record.species,
@@ -170,6 +178,7 @@ export async function POST(request: Request) {
         {
           observedAt: new Date(row.observedAt).toISOString(),
           location: row.location,
+          locationDetail: row.locationDetail,
           latitude: row.latitude,
           longitude: row.longitude,
           species: row.species,

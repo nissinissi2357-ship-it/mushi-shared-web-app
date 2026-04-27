@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteObservation, getViewerFromSession, updateObservation } from "@/lib/data";
+import { isKnownLocationOption } from "@/lib/locations";
 import { readSession } from "@/lib/session";
 
 export async function PATCH(
@@ -17,6 +18,7 @@ export async function PATCH(
     const body = await request.json();
     const observedAt = String(body.observedAt || "").trim();
     const location = String(body.location || "").trim();
+    const locationDetail = String(body.locationDetail || "").trim();
     const species = String(body.species || "").trim();
     const scoringMemo = String(body.scoringMemo || "").trim();
     const points = Number(body.points);
@@ -28,6 +30,10 @@ export async function PATCH(
       return NextResponse.json({ error: "必須項目を入力してください。" }, { status: 400 });
     }
 
+    if (!isKnownLocationOption(location)) {
+      return NextResponse.json({ error: "観察地域は一覧から選んでください。" }, { status: 400 });
+    }
+
     if ((latitude !== null && Number.isNaN(latitude)) || (longitude !== null && Number.isNaN(longitude))) {
       return NextResponse.json({ error: "地図の座標が正しくありません。" }, { status: 400 });
     }
@@ -37,6 +43,7 @@ export async function PATCH(
       {
         observedAt,
         location,
+        locationDetail,
         latitude,
         longitude,
         species,
