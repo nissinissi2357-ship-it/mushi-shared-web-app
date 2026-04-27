@@ -13,7 +13,6 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { parseCaptainMessage } from "@/lib/line-parser";
 import type {
-  InquiryGroupPriority,
   InquiryObservation,
   InitialViewerState,
   LoginResult,
@@ -74,11 +73,16 @@ type RankingPeriodOption = {
   label: string;
 };
 
-type InquiryAggregateRow = {
-  key: string;
-  species: string;
+type InquiryLocationRow = {
   location: string;
+  monthCounts: number[];
+  totalCount: number;
+};
+
+type InquiryDetailRow = {
+  key: string;
   date: string;
+  location: string;
   count: number;
 };
 
@@ -176,9 +180,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
   const [inquirySearchLocation, setInquirySearchLocation] = useState("");
   const [inquirySearchDate, setInquirySearchDate] = useState("");
-  const [inquiryPriority, setInquiryPriority] = useState<InquiryGroupPriority>("species");
   const [inquiryLogs, setInquiryLogs] = useState<InquiryObservation[]>([]);
   const [isInquiryLoading, setIsInquiryLoading] = useState(false);
+  const [selectedInquirySpecies, setSelectedInquirySpecies] = useState("");
+  const [selectedInquiryYear, setSelectedInquiryYear] = useState("");
   const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
@@ -263,12 +268,44 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     );
   }, [inquiryLogs, inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
 
-  const inquiryRows = useMemo(
-    () => buildInquiryRows(filteredInquiryLogs, inquiryPriority),
-    [filteredInquiryLogs, inquiryPriority]
+  const inquirySpeciesList = useMemo(
+    () =>
+      [...new Set(filteredInquiryLogs.map((log) => log.species))]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right, "ja-JP")),
+    [filteredInquiryLogs]
   );
 
-  const inquiryColumns = useMemo(() => buildInquiryColumns(inquiryPriority), [inquiryPriority]);
+  const selectedInquirySpeciesLogs = useMemo(
+    () => filteredInquiryLogs.filter((log) => log.species === selectedInquirySpecies),
+    [filteredInquiryLogs, selectedInquirySpecies]
+  );
+
+  const inquiryYearOptions = useMemo(
+    () =>
+      [...new Set(selectedInquirySpeciesLogs.map((log) => String(new Date(log.observedAt).getFullYear())))]
+        .filter(Boolean)
+        .sort((left, right) => right.localeCompare(left)),
+    [selectedInquirySpeciesLogs]
+  );
+
+  const selectedInquiryYearLogs = useMemo(
+    () =>
+      selectedInquirySpeciesLogs.filter(
+        (log) => String(new Date(log.observedAt).getFullYear()) === selectedInquiryYear
+      ),
+    [selectedInquirySpeciesLogs, selectedInquiryYear]
+  );
+
+  const inquiryLocationRows = useMemo(
+    () => buildInquiryLocationRows(selectedInquiryYearLogs),
+    [selectedInquiryYearLogs]
+  );
+
+  const inquiryDetailRows = useMemo(
+    () => buildInquiryDetailRows(selectedInquiryYearLogs),
+    [selectedInquiryYearLogs]
+  );
   const summaryYear = new Date().getFullYear();
 
   const monthlyPointSeries = useMemo(() => {
@@ -314,6 +351,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setRankingPeriod(rankingPeriodOptions[0]?.value ?? `month:${toMonthKey(new Date())}`);
     }
   }, [rankingPeriod, rankingPeriodOptions]);
+
+  useEffect(() => {
+    setSelectedInquirySpecies((current) =>
+      current && inquirySpeciesList.includes(current) ? current : (inquirySpeciesList[0] ?? "")
+    );
+  }, [inquirySpeciesList]);
+
+  useEffect(() => {
+    setSelectedInquiryYear((current) =>
+      current && inquiryYearOptions.includes(current) ? current : (inquiryYearOptions[0] ?? "")
+    );
+  }, [inquiryYearOptions]);
 
   useEffect(() => {
     if (!currentMember) {
@@ -2035,22 +2084,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Inquiry</p>
                   <h2>記録照会</h2>
-                  <p className="helper-text">全隊員の観察記録から、今シーズンの記録状況をまとめて確認できます。</p>
+                  <p className="helper-text">全隊員の観察記録から、種類ごとの出現状況を年ごとに確認できます。</p>
                 </div>
 
                 <div className="toolbar-row">
-                  <label>
-                    取りまとめの優先項目
-                    <select
-                      value={inquiryPriority}
-                      onChange={(event) => setInquiryPriority(event.target.value as InquiryGroupPriority)}
-                    >
-                      <option value="species">種名別を優先</option>
-                      <option value="location">場所別を優先</option>
-                      <option value="date">日付別を優先</option>
-                    </select>
-                  </label>
-
                   <button
                     type="button"
                     className="secondary-button"
@@ -2136,38 +2173,138 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               {!isInquiryLoading ? (
                 <p className="helper-text">
-                  {filteredInquiryLogs.length}件の記録から、{inquiryRows.length}件の組み合わせを表示しています。
+                  {filteredInquiryLogs.length}件の記録から、{inquirySpeciesList.length}種類を表示しています。
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquiryRows.length === 0 ? (
+              {!isInquiryLoading && inquirySpeciesList.length === 0 ? (
                 <p className="helper-text">
                   {hasInquirySearch ? "検索条件に合う記録はありません。" : "照会できる観察記録がまだありません。"}
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquiryRows.length > 0 ? (
-                <div className="table-scroll">
-                  <table className="inquiry-table">
-                    <thead>
-                      <tr>
-                        {inquiryColumns.map((column) => (
-                          <th key={column.key}>{column.label}</th>
-                        ))}
-                        <th>件数</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inquiryRows.map((row) => (
-                        <tr key={row.key}>
-                          {inquiryColumns.map((column) => (
-                            <td key={column.key}>{row[column.key]}</td>
-                          ))}
-                          <td>{row.count}件</td>
-                        </tr>
+              {!isInquiryLoading && inquirySpeciesList.length > 0 ? (
+                <div className="inquiry-layout">
+                  <section className="inquiry-species-panel">
+                    <div className="inquiry-panel-head">
+                      <div>
+                        <p className="section-label">Species</p>
+                        <h3>種類一覧</h3>
+                      </div>
+                      <p className="helper-text">50音順に並んでいます。</p>
+                    </div>
+
+                    <div className="inquiry-species-list">
+                      {inquirySpeciesList.map((species) => (
+                        <button
+                          key={species}
+                          type="button"
+                          className={species === selectedInquirySpecies ? "species-chip species-chip-active" : "species-chip"}
+                          onClick={() => setSelectedInquirySpecies(species)}
+                        >
+                          {species}
+                        </button>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </section>
+
+                  <section className="inquiry-profile-panel">
+                    {selectedInquirySpecies ? (
+                      <>
+                        <div className="inquiry-panel-head">
+                          <div>
+                            <p className="section-label">Profile</p>
+                            <h3>{selectedInquirySpecies}</h3>
+                          </div>
+
+                          <label className="inquiry-year-field">
+                            表示する年
+                            <select
+                              value={selectedInquiryYear}
+                              onChange={(event) => setSelectedInquiryYear(event.target.value)}
+                            >
+                              {inquiryYearOptions.map((year) => (
+                                <option key={year} value={year}>
+                                  {year}年
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        {selectedInquiryYear ? (
+                          <p className="helper-text">
+                            {selectedInquiryYear}年の記録は {selectedInquiryYearLogs.length}件です。
+                          </p>
+                        ) : null}
+
+                        <div className="table-scroll inquiry-calendar-scroll">
+                          <table className="inquiry-calendar">
+                            <thead>
+                              <tr>
+                                <th>地域</th>
+                                {Array.from({ length: 12 }, (_, index) => (
+                                  <th key={index + 1}>{index + 1}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {inquiryLocationRows.map((row) => (
+                                <tr key={row.location}>
+                                  <th>{row.location}</th>
+                                  {row.monthCounts.map((count, index) => (
+                                    <td
+                                      key={`${row.location}-${index + 1}`}
+                                      className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active" : "inquiry-month-cell"}
+                                    >
+                                      {count > 0 ? count : ""}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <section className="inquiry-detail-block">
+                          <div className="inquiry-panel-head">
+                            <div>
+                              <p className="section-label">Details</p>
+                              <h4>詳細記録</h4>
+                            </div>
+                            <p className="helper-text">同じ日付・同じ場所の記録は件数でまとめています。</p>
+                          </div>
+
+                          {inquiryDetailRows.length === 0 ? (
+                            <p className="helper-text">この年の記録はありません。</p>
+                          ) : (
+                            <div className="table-scroll">
+                              <table className="inquiry-table inquiry-detail-table">
+                                <thead>
+                                  <tr>
+                                    <th>日付</th>
+                                    <th>場所</th>
+                                    <th>件数</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {inquiryDetailRows.map((row) => (
+                                    <tr key={row.key}>
+                                      <td>{row.date}</td>
+                                      <td>{row.location}</td>
+                                      <td>{row.count}件</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </section>
+                      </>
+                    ) : (
+                      <p className="helper-text">表示できる種類がありません。</p>
+                    )}
+                  </section>
                 </div>
               ) : null}
             </section>
@@ -2803,12 +2940,40 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
   );
 }
 
-function buildInquiryRows(logs: InquiryObservation[], priority: InquiryGroupPriority): InquiryAggregateRow[] {
-  const grouped = new Map<string, InquiryAggregateRow>();
+function buildInquiryLocationRows(logs: InquiryObservation[]): InquiryLocationRow[] {
+  const grouped = new Map<string, InquiryLocationRow>();
+
+  for (const log of logs) {
+    const monthIndex = new Date(log.observedAt).getMonth();
+    const current =
+      grouped.get(log.location) ??
+      {
+        location: log.location,
+        monthCounts: Array.from({ length: 12 }, () => 0),
+        totalCount: 0
+      };
+
+    current.monthCounts[monthIndex] += 1;
+    current.totalCount += 1;
+    grouped.set(log.location, current);
+  }
+
+  return [...grouped.values()].sort((left, right) => {
+    const countComparison = right.totalCount - left.totalCount;
+    if (countComparison !== 0) {
+      return countComparison;
+    }
+
+    return left.location.localeCompare(right.location, "ja-JP");
+  });
+}
+
+function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] {
+  const grouped = new Map<string, InquiryDetailRow>();
 
   for (const log of logs) {
     const date = toDateInputValue(log.observedAt);
-    const key = [log.species, log.location, date].join("||");
+    const key = `${date}||${log.location}`;
     const current = grouped.get(key);
 
     if (current) {
@@ -2818,42 +2983,20 @@ function buildInquiryRows(logs: InquiryObservation[], priority: InquiryGroupPrio
 
     grouped.set(key, {
       key,
-      species: log.species,
-      location: log.location,
       date,
+      location: log.location,
       count: 1
     });
   }
 
-  const priorityOrder = buildInquiryColumns(priority).map((column) => column.key);
-
   return [...grouped.values()].sort((left, right) => {
-    for (const field of priorityOrder) {
-      const comparison = left[field].localeCompare(right[field], "ja-JP");
-      if (comparison !== 0) {
-        return comparison;
-      }
+    const dateComparison = right.date.localeCompare(left.date);
+    if (dateComparison !== 0) {
+      return dateComparison;
     }
 
-    return right.count - left.count;
+    return left.location.localeCompare(right.location, "ja-JP");
   });
-}
-
-function buildInquiryColumns(priority: InquiryGroupPriority): Array<{ key: InquiryGroupPriority; label: string }> {
-  const labels: Record<InquiryGroupPriority, string> = {
-    species: "種名",
-    location: "場所",
-    date: "日付"
-  };
-
-  const order =
-    priority === "species"
-      ? (["species", "location", "date"] as const)
-      : priority === "location"
-        ? (["location", "species", "date"] as const)
-        : (["date", "species", "location"] as const);
-
-  return order.map((key) => ({ key, label: labels[key] }));
 }
 
 function buildRankingPeriodOptions(logs: ObservationLog[], pointEntries: PointEntry[], currentYear: number): RankingPeriodOption[] {

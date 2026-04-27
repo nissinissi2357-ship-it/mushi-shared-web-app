@@ -32,8 +32,6 @@ export type InquiryObservation = {
   species: string;
 };
 
-export type InquiryGroupPriority = "species" | "location" | "date";
-
 export type PointEntry = {
   id: string;
   memberId: string;

@@ -552,6 +552,90 @@ select {
   border-bottom: none;
 }
 
+.inquiry-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.inquiry-species-panel,
+.inquiry-profile-panel,
+.inquiry-detail-block {
+  display: grid;
+  gap: 14px;
+}
+
+.inquiry-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+}
+
+.inquiry-panel-head h3,
+.inquiry-panel-head h4 {
+  margin: 6px 0 0;
+}
+
+.inquiry-species-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.species-chip {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 42, 31, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--forest-900);
+  font-weight: 700;
+}
+
+.species-chip-active {
+  background: var(--accent-strong);
+  color: white;
+  box-shadow: 0 12px 28px rgba(47, 107, 63, 0.18);
+}
+
+.inquiry-year-field {
+  min-width: 160px;
+}
+
+.inquiry-calendar {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.inquiry-calendar th,
+.inquiry-calendar td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(31, 42, 31, 0.08);
+  border-right: 1px solid rgba(31, 42, 31, 0.08);
+  text-align: center;
+}
+
+.inquiry-calendar th:first-child,
+.inquiry-calendar td:first-child {
+  text-align: left;
+  min-width: 120px;
+}
+
+.inquiry-calendar th {
+  background: rgba(236, 241, 231, 0.92);
+}
+
+.inquiry-month-cell {
+  min-width: 44px;
+  color: var(--muted);
+}
+
+.inquiry-month-cell-active {
+  background: rgba(47, 107, 63, 0.18);
+  color: var(--forest-900);
+  font-weight: 700;
+}
+
 .card-menu {
   position: relative;
 }
@@ -926,6 +1010,11 @@ select:disabled {
     flex-direction: column;
   }
 
+  .inquiry-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .logs-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1.5fr) auto auto;
@@ -951,6 +1040,10 @@ select:disabled {
 
   .logs-pagination-actions > button {
     flex: 1 1 0;
+  }
+
+  .inquiry-year-field {
+    min-width: 0;
   }
 
   .trend-head {
