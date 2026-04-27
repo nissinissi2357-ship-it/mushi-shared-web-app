@@ -1766,6 +1766,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <MapCoordinatePicker
                     latitude={draft.latitude}
                     longitude={draft.longitude}
+                    currentRegion={draft.location}
                     locationDetail={draft.locationDetail}
                     onChange={(coords) =>
                       setDraft((current) => ({
@@ -2084,6 +2085,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <MapCoordinatePicker
                               latitude={editingLogDraft.latitude}
                               longitude={editingLogDraft.longitude}
+                              currentRegion={editingLogDraft.location}
                               locationDetail={editingLogDraft.locationDetail}
                               onChange={(coords) =>
                                 setEditingLogDraft((current) => ({
@@ -2580,12 +2582,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 function MapCoordinatePicker({
   latitude,
   longitude,
+  currentRegion,
   locationDetail,
   onChange,
   onAddressResolved
 }: {
   latitude: string;
   longitude: string;
+  currentRegion: string;
   locationDetail?: string;
   onChange: (coords: { latitude: string; longitude: string }) => void;
   onAddressResolved?: (result: { region: string; locationDetail: string }) => void;
@@ -2597,6 +2601,14 @@ function MapCoordinatePicker({
   const [isLocating, setIsLocating] = useState(false);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
+  const [pendingSelection, setPendingSelection] = useState<{
+    region: string;
+    locationDetail: string;
+  } | null>(null);
+  const [conflictSelection, setConflictSelection] = useState<{
+    region: string;
+    locationDetail: string;
+  } | null>(null);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const gestureRef = useRef<{
@@ -2829,8 +2841,37 @@ function MapCoordinatePicker({
     setCenter(normalized);
   }
 
+  function commitPendingSelection(selection: { region: string; locationDetail: string }) {
+    onAddressResolved?.(selection);
+    setPendingSelection(null);
+    setConflictSelection(null);
+
+    if (selection.region || selection.locationDetail) {
+      const found = [
+        selection.region ? `地域: ${selection.region}` : "",
+        selection.locationDetail ? `詳細: ${selection.locationDetail}` : ""
+      ].filter(Boolean);
+      setLocationMessage(`この地点を確定しました。${found.join(" / ")}`);
+    } else {
+      setLocationMessage("この地点を確定しました。");
+    }
+  }
+
+  function shouldConfirmRegionConflict(selection: { region: string; locationDetail: string }) {
+    const current = currentRegion.trim();
+    const resolved = selection.region.trim();
+
+    if (!current || !resolved || current === resolved) {
+      return false;
+    }
+
+    return mergeResolvedRegion(current, resolved) !== current;
+  }
+
   async function resolveAddress(nextLatitude: number, nextLongitude: number) {
     setIsResolvingAddress(true);
+    setPendingSelection(null);
+    setConflictSelection(null);
 
     try {
       const response = await fetch(
@@ -2854,19 +2895,21 @@ function MapCoordinatePicker({
         throw new Error(payload.error || "住所の取得に失敗しました。");
       }
 
-      onAddressResolved?.({
+      const selection = {
         region: payload.region || "",
         locationDetail: payload.locationDetail || ""
-      });
+      };
 
-      if (payload.region || payload.locationDetail) {
+      setPendingSelection(selection);
+
+      if (selection.region || selection.locationDetail) {
         const found = [
-          payload.region ? `地域: ${payload.region}` : "",
-          payload.locationDetail ? `詳細: ${payload.locationDetail}` : ""
+          selection.region ? `地域: ${selection.region}` : "",
+          selection.locationDetail ? `詳細: ${selection.locationDetail}` : ""
         ].filter(Boolean);
-        setLocationMessage(`住所候補を入れました。${found.join(" / ")}`);
+        setLocationMessage(`候補を見つけました。${found.join(" / ")} / よければ下のボタンで確定してください。`);
       } else {
-        setLocationMessage("座標は入りました。観察地域は必要に応じて手で選んでください。");
+        setLocationMessage("座標は入りました。地域候補は取れませんでしたが、この地点で確定できます。");
       }
     } catch (error) {
       setLocationMessage(error instanceof Error ? error.message : "住所の取得に失敗しました。");
@@ -2927,6 +2970,8 @@ function MapCoordinatePicker({
           onClick={() => {
             onChange({ latitude: "", longitude: "" });
             setLocationMessage("");
+            setPendingSelection(null);
+            setConflictSelection(null);
           }}
         >
           座標をクリア
@@ -2978,6 +3023,25 @@ function MapCoordinatePicker({
 
       {locationMessage ? <p className="helper-text">{locationMessage}</p> : null}
       {isResolvingAddress ? <p className="helper-text">住所候補を確認しています...</p> : null}
+      {pendingSelection ? (
+        <div className="inline-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => {
+              if (shouldConfirmRegionConflict(pendingSelection)) {
+                setConflictSelection(pendingSelection);
+                return;
+              }
+
+              commitPendingSelection(pendingSelection);
+            }}
+            disabled={isResolvingAddress}
+          >
+            この地点で確定する
+          </button>
+        </div>
+      ) : null}
 
       <div className="coordinate-inputs">
         <label>
@@ -3008,6 +3072,39 @@ function MapCoordinatePicker({
         </label>
       </div>
       {locationDetail ? <p className="helper-text">詳細場所: {locationDetail}</p> : null}
+
+      {conflictSelection ? (
+        <div className="alert-overlay" onClick={() => setConflictSelection(null)}>
+          <section className="alert-panel" onClick={(event) => event.stopPropagation()}>
+            <p className="section-label">Check</p>
+            <h2>地図の場所を確認してください</h2>
+            <p>
+              今の観察地域は {currentRegion || "未選択"} ですが、地図では {conflictSelection.region || "別の地域"} が候補です。
+              地図で選んだ場所に更新しますか？
+            </p>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => commitPendingSelection(conflictSelection)}
+              >
+                地図の場所に更新
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setConflictSelection(null);
+                  setPendingSelection(null);
+                  setLocationMessage("今の観察地域をそのまま残しました。");
+                }}
+              >
+                今の地域を残す
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
