@@ -320,6 +320,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
     [isInquiryKureExpanded, selectedInquiryYearLogs]
   );
+  const inquiryMonthlySummary = useMemo(
+    () => buildInquiryMonthlySummary(selectedInquiryYearLogs),
+    [selectedInquiryYearLogs]
+  );
 
   const inquiryDetailRows = useMemo(
     () => buildInquiryDetailRows(selectedInquiryYearLogs),
@@ -1310,6 +1314,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr>
+                    <th className="inquiry-location-label">合計</th>
+                    {inquiryMonthlySummary.monthCounts.map((count, index) => (
+                      <td
+                        key={`summary-${index + 1}`}
+                        className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active inquiry-total-cell" : "inquiry-month-cell inquiry-total-cell"}
+                      >
+                        {count > 0 ? count : ""}
+                      </td>
+                    ))}
+                    <td className="inquiry-total-cell">{inquiryMonthlySummary.totalCount}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
@@ -3326,6 +3344,20 @@ function buildInquiryLocationRows(logs: InquiryObservation[], isKureExpanded: bo
   }
 
   return expandedRows;
+}
+
+function buildInquiryMonthlySummary(logs: InquiryObservation[]) {
+  const monthCounts = Array.from({ length: 12 }, () => 0);
+
+  for (const log of logs) {
+    const monthIndex = new Date(log.observedAt).getMonth();
+    monthCounts[monthIndex] += 1;
+  }
+
+  return {
+    monthCounts,
+    totalCount: logs.length
+  };
 }
 
 function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] {
