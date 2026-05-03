@@ -288,26 +288,11 @@ select {
   stroke-width: 2;
 }
 
-.trend-area {
-  fill: rgba(92, 163, 88, 0.16);
-}
-
-.trend-line {
-  fill: none;
-  stroke: #2f6b3f;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.trend-dot {
-  fill: #d98b2b;
-  stroke: #fff7eb;
-  stroke-width: 3;
+.trend-stack {
+  opacity: 0.96;
 }
 
 .trend-label,
-.trend-count,
 .trend-value {
   fill: var(--muted);
   font-size: 12px;
@@ -319,22 +304,29 @@ select {
   font-weight: 700;
 }
 
-.trend-count {
-  fill: #7e4500;
-}
-
 .trend-legend {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
 
 .trend-legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
   border-radius: 16px;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.trend-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: inline-block;
 }
 
 .trend-legend-item span,

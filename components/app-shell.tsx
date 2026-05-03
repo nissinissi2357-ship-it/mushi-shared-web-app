@@ -204,7 +204,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
-  const currentSummary = summaries.find((summary) => summary.memberId === selectedMemberId) ?? null;
   const canViewRanking = true;
   const currentYear = new Date().getFullYear();
 
@@ -333,13 +332,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   );
   const summaryYear = new Date().getFullYear();
 
-  const monthlyPointSeries = useMemo(() => {
-    if (!selectedMemberId) {
-      return [];
-    }
-
-    return buildMonthlyPointSeries(logs, pointEntries, selectedMemberId);
-  }, [logs, pointEntries, selectedMemberId]);
+  const monthlyPointSeries = useMemo(
+    () => buildMonthlyPointSeries(members, logs, pointEntries),
+    [logs, members, pointEntries]
+  );
 
   const rankingPeriodOptions = useMemo(
     () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
@@ -1383,18 +1379,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </div>
               </div>
 
-              {currentSummary ? (
-                <div className="hero-stats">
-                  <StatCard label={`${currentYear}年の合計`} value={`${currentSummary.totalPoints}P`} />
-                  <StatCard label="通算ポイント" value={`${currentSummary.lifetimeTotalPoints}P`} />
-                  <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
-                </div>
-              ) : null}
-
               <div className="home-copy">
-                <p>合計ポイントは今年1月からの集計です。年が変わると、今年のポイントは0から始まります。</p>
-                <p>通算ポイントでは、これまでの累計ポイントも確認できます。</p>
-                <p>ランキングや観察ログは、誰でもこの画面から確認できます。</p>
+                <p>今年のランキングを中心に見られるホーム画面です。年が変わると、その年のポイントで新しく集計されます。</p>
+                <p>下のグラフでは、直近6か月のポイントを隊員ごとの積み上げで確認できます。</p>
               </div>
 
               <MonthlyTrendChart data={monthlyPointSeries} />
@@ -3029,15 +3016,6 @@ function MapCoordinatePicker({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
 function mergeResolvedRegion(currentLocation: string, resolvedRegion: string) {
   const current = currentLocation.trim();
   const resolved = resolvedRegion.trim();
@@ -3063,26 +3041,58 @@ function formatObservationLocation(location: string, locationDetail?: string | n
   return detail ? `${location} / ${detail}` : location;
 }
 
-function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: number; recordCount: number }> }) {
+function MonthlyTrendChart({
+  data
+}: {
+  data: Array<{
+    label: string;
+    total: number;
+    segments: Array<{ memberId: string; displayName: string; points: number; color: string }>;
+  }>;
+}) {
   const width = 640;
   const height = 220;
-  const paddingX = 28;
+  const paddingX = 36;
   const paddingTop = 18;
   const paddingBottom = 34;
   const graphWidth = width - paddingX * 2;
   const graphHeight = height - paddingTop - paddingBottom;
   const maxValue = Math.max(...data.map((item) => item.total), 1);
+  const barGap = 18;
+  const barWidth = Math.max(32, (graphWidth - barGap * Math.max(data.length - 1, 0)) / Math.max(data.length, 1));
 
-  const points = data.map((item, index) => {
-    const x = paddingX + (graphWidth * index) / Math.max(data.length - 1, 1);
-    const y = paddingTop + graphHeight - (item.total / maxValue) * graphHeight;
-    return { ...item, x, y };
+  const bars = data.map((item, index) => {
+    const x = paddingX + index * (barWidth + barGap);
+    let stackedHeight = 0;
+    const segments = item.segments
+      .filter((segment) => segment.points > 0)
+      .map((segment) => {
+        const segmentHeight = (segment.points / maxValue) * graphHeight;
+        const y = paddingTop + graphHeight - stackedHeight - segmentHeight;
+        stackedHeight += segmentHeight;
+        return {
+          ...segment,
+          x,
+          y,
+          width: barWidth,
+          height: segmentHeight
+        };
+      });
+
+    return {
+      ...item,
+      x,
+      width: barWidth,
+      topY: paddingTop + graphHeight - (item.total / maxValue) * graphHeight,
+      segments
+    };
   });
 
-  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const areaPath = points.length
-    ? `${linePath} L ${points[points.length - 1].x} ${paddingTop + graphHeight} L ${points[0].x} ${paddingTop + graphHeight} Z`
-    : "";
+  const legendMembers = Array.from(
+    new Map(
+      data.flatMap((item) => item.segments.map((segment) => [segment.memberId, segment] as const))
+    ).values()
+  );
 
   return (
     <section className="trend-card">
@@ -3091,7 +3101,7 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
           <p className="section-label">Trend</p>
           <h3>月別ポイント推移</h3>
         </div>
-          <p className="helper-text">直近6か月の観察ポイントと追加ポイントの合計です。観察件数も併記しています。</p>
+        <p className="helper-text">直近6か月の観察ポイントと追加ポイントの合計を、隊員ごとの積み上げで表示しています。</p>
       </div>
 
       {data.length === 0 ? (
@@ -3106,30 +3116,36 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
               y2={paddingTop + graphHeight}
               className="trend-axis"
             />
-            {areaPath ? <path d={areaPath} className="trend-area" /> : null}
-            {linePath ? <path d={linePath} className="trend-line" /> : null}
-            {points.map((point) => (
-              <g key={point.label}>
-                <circle cx={point.x} cy={point.y} r="5" className="trend-dot" />
-                <text x={point.x} y={height - 10} textAnchor="middle" className="trend-label">
-                  {point.label}
+            {bars.map((bar) => (
+              <g key={bar.label}>
+                {bar.segments.map((segment) => (
+                  <rect
+                    key={`${bar.label}-${segment.memberId}`}
+                    x={segment.x}
+                    y={segment.y}
+                    width={segment.width}
+                    height={Math.max(segment.height, 0)}
+                    rx="8"
+                    fill={segment.color}
+                    className="trend-stack"
+                  />
+                ))}
+                <text x={bar.x + bar.width / 2} y={height - 10} textAnchor="middle" className="trend-label">
+                  {bar.label}
                 </text>
-                <text x={point.x} y={height - 24} textAnchor="middle" className="trend-count">
-                  {point.recordCount}件
-                </text>
-                <text x={point.x} y={point.y - 12} textAnchor="middle" className="trend-value">
-                  {point.total}P
+                <text x={bar.x + bar.width / 2} y={bar.topY - 10} textAnchor="middle" className="trend-value">
+                  {bar.total}P
                 </text>
               </g>
             ))}
           </svg>
 
           <div className="trend-legend">
-            {data.map((item) => (
-              <div key={item.label} className="trend-legend-item">
-                <span>{item.label}</span>
-                <strong>{item.total}P</strong>
-                <small>{item.recordCount}件</small>
+            {legendMembers.map((member) => (
+              <div key={member.memberId} className="trend-legend-item">
+                <span className="trend-legend-swatch" style={{ backgroundColor: member.color }} />
+                <strong>{member.displayName}</strong>
+                <small>積み上げ内訳</small>
               </div>
             ))}
           </div>
@@ -3342,59 +3358,69 @@ function buildRankingSummaries(
 }
 
 function buildMonthlyPointSeries(
+  members: Member[],
   logs: ObservationLog[],
   pointEntries: PointEntry[],
-  memberId: string,
   months = 6
-): Array<{ label: string; total: number; recordCount: number }> {
-  const totals = new Map<string, { total: number; recordCount: number }>();
+): Array<{
+  label: string;
+  total: number;
+  segments: Array<{ memberId: string; displayName: string; points: number; color: string }>;
+}> {
+  const colorPalette = [
+    "#2f6b3f",
+    "#5b8c2a",
+    "#d9822b",
+    "#b84a39",
+    "#2d7a86",
+    "#7b5ea7",
+    "#9c6b30",
+    "#506b95"
+  ];
+  const memberColors = new Map(
+    members.map((member, index) => [member.id, colorPalette[index % colorPalette.length]])
+  );
+  const monthBuckets = new Map<string, Map<string, number>>();
   const current = new Date();
   const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1);
 
   for (let offset = months - 1; offset >= 0; offset -= 1) {
     const monthDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - offset, 1);
     const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-    totals.set(key, { total: 0, recordCount: 0 });
+    monthBuckets.set(key, new Map(members.map((member) => [member.id, 0])));
   }
 
   for (const log of logs) {
-    if (log.memberId !== memberId) {
-      continue;
-    }
-
     const observedAt = new Date(log.observedAt);
     const key = `${observedAt.getFullYear()}-${String(observedAt.getMonth() + 1).padStart(2, "0")}`;
-    if (totals.has(key)) {
-      const currentMonthTotal = totals.get(key)!;
-      totals.set(key, {
-        total: currentMonthTotal.total + log.points,
-        recordCount: currentMonthTotal.recordCount + 1
-      });
+    const bucket = monthBuckets.get(key);
+    if (bucket && bucket.has(log.memberId)) {
+      bucket.set(log.memberId, (bucket.get(log.memberId) ?? 0) + log.points);
     }
   }
 
   for (const entry of pointEntries) {
-    if (entry.memberId !== memberId) {
-      continue;
-    }
-
     const awardedAt = new Date(entry.awardedAt);
     const key = `${awardedAt.getFullYear()}-${String(awardedAt.getMonth() + 1).padStart(2, "0")}`;
-    if (totals.has(key)) {
-      const currentMonthTotal = totals.get(key)!;
-      totals.set(key, {
-        total: currentMonthTotal.total + entry.points,
-        recordCount: currentMonthTotal.recordCount
-      });
+    const bucket = monthBuckets.get(key);
+    if (bucket && bucket.has(entry.memberId)) {
+      bucket.set(entry.memberId, (bucket.get(entry.memberId) ?? 0) + entry.points);
     }
   }
 
-  return Array.from(totals.entries()).map(([key, value]) => {
+  return Array.from(monthBuckets.entries()).map(([key, bucket]) => {
     const [, month] = key.split("-");
+    const segments = members.map((member) => ({
+      memberId: member.id,
+      displayName: member.displayName,
+      points: bucket.get(member.id) ?? 0,
+      color: memberColors.get(member.id) ?? colorPalette[0]
+    }));
+
     return {
       label: `${Number(month)}月`,
-      total: value.total,
-      recordCount: value.recordCount
+      total: segments.reduce((sum, segment) => sum + segment.points, 0),
+      segments
     };
   });
 }
