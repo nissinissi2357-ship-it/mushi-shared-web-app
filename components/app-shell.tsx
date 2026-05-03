@@ -878,7 +878,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       }
 
       await refreshEverything();
-      setStatusMessage("合言葉を 0000 にリセットしました。");
+      setStatusMessage("合言葉を初期化しました。");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "合言葉のリセットに失敗しました。");
     } finally {
@@ -2341,7 +2341,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Members</p>
                   <h2>隊員管理</h2>
-                  <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の0000リセット、削除ができます。</p>
+                  <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の初期化、削除ができます。</p>
                 </div>
 
                 {isMemberManagerUnlocked ? (
@@ -2365,7 +2365,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     <input
                       type="password"
                       inputMode="numeric"
-                      placeholder="0000"
+                      placeholder="管理用の合言葉を入力"
                       value={memberManagerPasscode}
                       onChange={(event) => setMemberManagerPasscode(event.target.value)}
                     />
@@ -2377,7 +2377,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </button>
                   </div>
 
-                  <p className="helper-text full-width">隊員管理はパスワード `0000` で開けます。</p>
+                  <p className="helper-text full-width">管理用の合言葉を入力すると、隊員管理を開けます。</p>
                 </form>
               ) : (
                 <>
@@ -2475,7 +2475,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               onClick={() => handleAdminResetPasscode(member.id)}
                               disabled={isAdminSaving}
                             >
-                              合言葉を0000に
+                              合言葉を初期化
                             </button>
                             <button
                               type="button"
