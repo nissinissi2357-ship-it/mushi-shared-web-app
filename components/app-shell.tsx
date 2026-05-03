@@ -2184,19 +2184,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <div>
                               <p className="record-meta">{formatDateTime(log.observedAt)}</p>
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
+                              <ClassificationMeta
+                                orderName={log.orderName}
+                                familyName={log.familyName}
+                              />
                               <h3 className="record-species">
                                 <span>{log.species}</span>
                                 {log.scientificName ? (
                                   <>
                                     {" "}
-                                    <span className="scientific-name">({log.scientificName})</span>
+                                    <span className="scientific-name">{log.scientificName}</span>
                                   </>
                                 ) : null}
                               </h3>
-                              <ClassificationMeta
-                                orderName={log.orderName}
-                                familyName={log.familyName}
-                              />
                             </div>
                             <div className="record-top-actions">
                               <div className="point-badge">{log.points}P</div>
