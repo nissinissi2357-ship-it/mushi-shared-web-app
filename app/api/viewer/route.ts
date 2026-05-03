@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-import { getViewerFromSession } from "@/lib/data";
-import { readSession } from "@/lib/session";
+import { getPublicViewer } from "@/lib/data";
 
 export async function GET() {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
+    const viewer = await getPublicViewer();
     return NextResponse.json(viewer, {
       headers: {
         "Cache-Control": "no-store"

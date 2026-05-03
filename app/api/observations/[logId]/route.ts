@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
-import { deleteObservation, getViewerFromSession, updateObservation } from "@/lib/data";
+import { deleteObservation, getPublicActor, updateObservation } from "@/lib/data";
 import { isKnownLocationOption } from "@/lib/locations";
-import { readSession } from "@/lib/session";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ logId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { logId } = await context.params;
     const body = await request.json();
     const observedAt = String(body.observedAt || "").trim();
@@ -50,7 +43,7 @@ export async function PATCH(
         points,
         scoringMemo
       },
-      viewer.member
+      getPublicActor()
     );
 
     return NextResponse.json({ log: updated });
@@ -67,14 +60,8 @@ export async function DELETE(
   context: { params: Promise<{ logId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { logId } = await context.params;
-    await deleteObservation(logId, viewer.member);
+    await deleteObservation(logId, getPublicActor());
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

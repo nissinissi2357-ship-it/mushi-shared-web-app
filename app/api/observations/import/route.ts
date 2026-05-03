@@ -1,6 +1,5 @@
-import { getViewerFromSession, insertObservation, listMembers } from "@/lib/data";
+import { getPublicActor, insertObservation, listMembers } from "@/lib/data";
 import { isKnownLocationOption } from "@/lib/locations";
-import { readSession } from "@/lib/session";
 import type { Member } from "@/lib/types";
 
 const HEADER_ALIASES: Record<string, string> = {
@@ -120,15 +119,10 @@ function parseRows(csvText: string) {
 }
 
 function resolveImportMember(
-  viewer: Member,
   members: Member[],
   rowMemberDisplayName: string,
   selectedMemberId: string | null
 ) {
-  if (viewer.role !== "captain" && viewer.role !== "admin") {
-    return viewer;
-  }
-
   if (selectedMemberId) {
     const selectedMember = members.find((member) => member.id === selectedMemberId);
     if (!selectedMember) {
@@ -152,13 +146,6 @@ function resolveImportMember(
 
 export async function POST(request: Request) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-
-    if (!viewer) {
-      return Response.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const formData = await request.formData();
     const file = formData.get("file");
     const selectedMemberId = String(formData.get("memberId") || "").trim() || null;
@@ -172,7 +159,7 @@ export async function POST(request: Request) {
     const members = await listMembers();
 
     for (const row of parsedRows) {
-      const targetMember = resolveImportMember(viewer.member, members, row.memberDisplayName, selectedMemberId);
+      const targetMember = resolveImportMember(members, row.memberDisplayName, selectedMemberId);
 
       await insertObservation(
         {

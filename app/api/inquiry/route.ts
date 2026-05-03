@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
 import { listInquiryObservations } from "@/lib/data";
-import { readSession } from "@/lib/session";
 
 export async function GET() {
   try {
-    const session = await readSession();
-    if (!session) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const logs = await listInquiryObservations();
     return NextResponse.json(
       { logs },

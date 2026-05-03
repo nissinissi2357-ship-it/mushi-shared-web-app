@@ -201,9 +201,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
-  const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
-  const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
-  const isAdmin = currentMember?.role === "admin";
+  const currentSummary = summaries.find((summary) => summary.memberId === selectedMemberId) ?? null;
+  const canViewRanking = true;
+  const isAdmin = false;
   const currentYear = new Date().getFullYear();
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
@@ -332,12 +332,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const summaryYear = new Date().getFullYear();
 
   const monthlyPointSeries = useMemo(() => {
-    if (!currentMember) {
+    if (!selectedMemberId) {
       return [];
     }
 
-    return buildMonthlyPointSeries(logs, pointEntries, currentMember.id);
-  }, [currentMember, logs, pointEntries]);
+    return buildMonthlyPointSeries(logs, pointEntries, selectedMemberId);
+  }, [logs, pointEntries, selectedMemberId]);
 
   const rankingPeriodOptions = useMemo(
     () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
@@ -353,13 +353,17 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     rankingPeriodOptions.find((option) => option.value === rankingPeriod)?.label ?? "今月ランキング";
 
   useEffect(() => {
-    if (currentMember && !editingPointEntryId) {
+    if (selectedMemberId && !editingPointEntryId) {
       setPointDraft((current) => ({
         ...current,
-        memberId: current.memberId || currentMember.id
+        memberId: current.memberId || selectedMemberId
       }));
     }
-  }, [currentMember, editingPointEntryId]);
+  }, [editingPointEntryId, selectedMemberId]);
+
+  useEffect(() => {
+    setCurrentMember(selectedMember ?? initialViewer?.member ?? members[0] ?? null);
+  }, [initialViewer?.member, members, selectedMember]);
 
   useEffect(() => {
     setLogsPage(1);
@@ -398,11 +402,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }, [totalInquirySpeciesPages]);
 
   useEffect(() => {
-    if (!currentMember) {
-      setInquiryLogs([]);
-      return;
-    }
-
     if (activeTab !== "inquiry") {
       return;
     }
@@ -425,7 +424,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return () => {
       cancelled = true;
     };
-  }, [activeTab, currentMember]);
+  }, [activeTab]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -442,23 +441,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function applyViewerPayload(payload: LoginResult) {
-    setCurrentMember(payload.member);
-    setSelectedMemberId(payload.member.id);
+    setCurrentMember(selectedMember ?? payload.member);
+    setSelectedMemberId((current) =>
+      members.some((member) => member.id === current) ? current : payload.member.id
+    );
     setLogs(payload.logs);
     setPointEntries(payload.pointEntries);
     setSummaries(payload.summaries);
-    setAccountDisplayName(payload.member.displayName);
+    setAccountDisplayName((selectedMember ?? payload.member).displayName);
     setAccountPasscode("");
     setPointDraft((current) => ({
       ...current,
-      memberId:
-        canViewRanking && pointMemberFilterId ? pointMemberFilterId : current.memberId || payload.member.id
+      memberId: current.memberId || selectedMemberId || payload.member.id
     }));
-
-    if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
-      setLogMemberFilterId(null);
-      setPointMemberFilterId(null);
-    }
   }
 
   async function refreshMembers() {
@@ -527,14 +522,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setLogSearchDate("");
     setHighlightedLogId(log.id);
 
-    const shouldFilterToMember = payload.member.role === "captain" || payload.member.role === "admin";
-    const targetLogs = shouldFilterToMember
-      ? payload.logs.filter((entry) => entry.memberId === log.memberId)
-      : payload.logs;
-
-    if (shouldFilterToMember) {
-      setLogMemberFilterId(log.memberId);
-    }
+    const targetLogs = payload.logs.filter((entry) => entry.memberId === log.memberId);
+    setLogMemberFilterId(log.memberId);
 
     const logIndex = targetLogs.findIndex((entry) => entry.id === log.id);
     const nextPage = logIndex >= 0 ? Math.floor(logIndex / logPageSize) + 1 : 1;
@@ -543,11 +532,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleExportLogs() {
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
-      return;
-    }
-
     setIsExporting(true);
     setStatusMessage(null);
 
@@ -915,6 +899,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        memberId: selectedMemberId,
         observedAt: new Date(nextDraft.observedAt).toISOString(),
         location: nextDraft.location,
         locationDetail: nextDraft.locationDetail,
@@ -941,8 +926,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -959,8 +944,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleQuickRegister() {
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -1102,13 +1087,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function resetPointDraft() {
     setEditingPointEntryId(null);
-    setPointDraft(getDefaultPointEntryDraft(currentMember?.id ?? members[0]?.id ?? ""));
+    setPointDraft(getDefaultPointEntryDraft(selectedMemberId || (members[0]?.id ?? "")));
   }
 
   async function handlePointSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!pointDraft.memberId && !selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -1124,7 +1109,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            memberId: pointDraft.memberId || currentMember.id,
+            memberId: pointDraft.memberId || selectedMemberId,
             awardedAt: new Date(pointDraft.awardedAt).toISOString(),
             title: pointDraft.title,
             description: pointDraft.description,
@@ -1181,11 +1166,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function canManageMemberData(memberId: string) {
-    if (!currentMember) {
-      return false;
-    }
-
-    return currentMember.role === "captain" || currentMember.role === "admin" || currentMember.id === memberId;
+    return Boolean(memberId);
   }
 
   return (
@@ -1198,50 +1179,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           </div>
 
           <div className="hero-menu">
-            {currentMember ? <p className="hero-member">{currentMember.displayName}</p> : null}
-            {currentMember ? (
-              <button
-                type="button"
-                className="menu-button"
-                aria-label={`${currentMember.displayName} のアカウントメニュー`}
-                onClick={() => setIsAuthPanelOpen(true)}
-              >
-                ...
-              </button>
-            ) : (
-              <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
-                ログイン
-              </button>
-            )}
+            {selectedMember ? <p className="hero-member">入力対象: {selectedMember.displayName}</p> : null}
           </div>
         </div>
 
         {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
-
-        {currentMember && currentSummary ? (
-          <div className="hero-stats">
-            <StatCard label="合計ポイント" value={`${currentSummary.totalPoints}P`} />
-            <StatCard label="観察ポイント" value={`${currentSummary.observationPoints}P`} />
-            <StatCard label="追加ポイント" value={`${currentSummary.extraPoints}P`} />
-            <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
-          </div>
-        ) : null}
       </header>
-
-      {loginWarningMessage ? (
-        <div className="alert-overlay" onClick={() => setLoginWarningMessage(null)}>
-          <section className="alert-panel" onClick={(event) => event.stopPropagation()}>
-            <p className="section-label">Warning</p>
-            <h2>ログインできません</h2>
-            <p>{loginWarningMessage}</p>
-            <div className="inline-actions">
-              <button type="button" className="primary-button" onClick={() => setLoginWarningMessage(null)}>
-                閉じる
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
 
       {selectedInquirySpecies ? (
         <div className="alert-overlay" onClick={() => setSelectedInquirySpecies("")}>
@@ -1371,277 +1314,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         </div>
       ) : null}
 
-      {isAuthPanelOpen ? (
-        <div className="auth-overlay" onClick={() => setIsAuthPanelOpen(false)}>
-          <section className="session-panel auth-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="auth-panel-head">
-              <div>
-                <p className="section-label">Account</p>
-                <h2>{currentMember ? "アカウント設定" : "ログイン"}</h2>
-              </div>
-              <div className="auth-panel-actions">
-                {currentMember ? (
-                  <button type="button" className="ghost-button" onClick={handleLogout}>
-                    ログアウト
-                  </button>
-                ) : null}
-                <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
-                  閉じる
-                </button>
-              </div>
-            </div>
-
-            <section className="auth-section">
-              <p className="section-label">Login</p>
-              <div className="session-grid">
-                <label>
-                  ログインする隊員
-                  <select
-                    value={selectedMemberId}
-                    onChange={(event) => setSelectedMemberId(event.target.value)}
-                    disabled={members.length === 0}
-                  >
-                    {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  合言葉
-                  <input
-                    type="password"
-                    placeholder="4文字以上"
-                    value={loginPasscode}
-                    onChange={(event) => setLoginPasscode(event.target.value)}
-                  />
-                </label>
-
-                <div className="session-actions">
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleLogin}
-                    disabled={isLoggingIn || !selectedMember}
-                  >
-                    {isLoggingIn ? "ログイン中..." : "ログイン"}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            {!currentMember ? (
-              <section className="auth-section">
-                <p className="section-label">Join</p>
-                <div className="inline-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setIsRegisterPanelOpen((current) => !current)}
-                  >
-                    {isRegisterPanelOpen ? "新規作成を閉じる" : "新しいアカウントを作成する"}
-                  </button>
-                </div>
-
-                {isRegisterPanelOpen ? (
-                  <form className="registration-box" onSubmit={handleRegister}>
-                    <label>
-                      新しい隊員名
-                      <input
-                        type="text"
-                        placeholder="例: たろう"
-                        value={registerDraft.displayName}
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      合言葉
-                      <input
-                        type="password"
-                        placeholder="4文字以上"
-                        value={registerDraft.passcode}
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))
-                        }
-                      />
-                    </label>
-
-                    <div className="session-actions">
-                      <button type="submit" className="secondary-button" disabled={isRegistering}>
-                        {isRegistering ? "登録中..." : "隊員を追加"}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
-              </section>
-            ) : null}
-
-            {currentMember ? (
-              <section className="auth-section">
-                <p className="section-label">My Account</p>
-                <div className="inline-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setIsAccountSettingsOpen((current) => !current)}
-                  >
-                    {isAccountSettingsOpen ? "アカウント設定を閉じる" : "アカウント設定"}
-                  </button>
-                </div>
-
-                {isAccountSettingsOpen ? (
-                  <form className="account-form" onSubmit={handleAccountUpdate}>
-                    <label>
-                      アカウント名
-                      <input
-                        type="text"
-                        value={accountDisplayName}
-                        onChange={(event) => setAccountDisplayName(event.target.value)}
-                      />
-                    </label>
-
-                    <label>
-                      新しい合言葉
-                      <input
-                        type="password"
-                        placeholder="変更しないなら空欄"
-                        value={accountPasscode}
-                        onChange={(event) => setAccountPasscode(event.target.value)}
-                      />
-                    </label>
-
-                    <div className="session-actions">
-                      <button type="submit" className="secondary-button" disabled={isAccountSaving}>
-                        {isAccountSaving ? "更新中..." : "アカウント名と合言葉を更新"}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
-              </section>
-            ) : null}
-
-            {isAdmin ? (
-              <section className="auth-section admin-section">
-                <p className="section-label">Admin</p>
-
-                <form className="admin-create-form" onSubmit={handleAdminCreate}>
-                  <label>
-                    新規アカウント名
-                    <input
-                      type="text"
-                      value={adminCreateDraft.displayName}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({ ...current, displayName: event.target.value }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    初期合言葉
-                    <input
-                      type="password"
-                      value={adminCreateDraft.passcode}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({ ...current, passcode: event.target.value }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    権限
-                    <select
-                      value={adminCreateDraft.role}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({
-                          ...current,
-                          role: event.target.value as MemberRole
-                        }))
-                      }
-                    >
-                      <option value="member">隊員</option>
-                      <option value="captain">隊長</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </label>
-
-                  <div className="session-actions">
-                    <button type="submit" className="primary-button" disabled={isAdminSaving}>
-                      {isAdminSaving ? "作成中..." : "アカウントを作成"}
-                    </button>
-                  </div>
-                </form>
-
-                <div className="admin-member-list">
-                  {members.map((member) => (
-                    <article key={member.id} className="admin-member-card">
-                      <div>
-                        <p className="ranking-name">{member.displayName}</p>
-                        <p className="ranking-meta">{member.id === currentMember.id ? "現在ログイン中" : "管理対象"}</p>
-                      </div>
-
-                      <label>
-                        権限
-                        <select
-                          value={adminRoleDrafts[member.id] ?? member.role}
-                          onChange={(event) =>
-                            setAdminRoleDrafts((current) => ({
-                              ...current,
-                              [member.id]: event.target.value as MemberRole
-                            }))
-                          }
-                          disabled={member.id === currentMember.id}
-                        >
-                          <option value="member">隊員</option>
-                          <option value="captain">隊長</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </label>
-
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleAdminRoleUpdate(member.id)}
-                          disabled={isAdminSaving || member.id === currentMember.id}
-                        >
-                          権限を更新
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleAdminResetPasscode(member.id)}
-                          disabled={isAdminSaving}
-                        >
-                          合言葉を0000に
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => handleAdminDelete(member.id, member.displayName)}
-                          disabled={isAdminSaving || member.id === currentMember.id}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            <p className="helper-text">データソース: {source === "supabase" ? "Supabase" : "フォールバック表示"}</p>
-          </section>
-        </div>
-      ) : null}
-
-      {currentMember ? (
-        <>
+      <>
           <nav className="tab-bar" aria-label="画面切り替え">
             {tabs.map((tab) => (
               <button
@@ -1675,58 +1348,52 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               <div className="home-copy">
                 <p>合計ポイントは今年1月からの集計です。年が変わると、今年のポイントは0から始まります。</p>
                 <p>通算ポイントでは、これまでの累計ポイントも確認できます。</p>
-                <p>ランキングは隊長と Admin だけが見られます。</p>
+                <p>ランキングや観察ログは、誰でもこの画面から確認できます。</p>
               </div>
 
               <MonthlyTrendChart data={monthlyPointSeries} />
 
-              {canViewRanking ? (
-                <>
-                  <div className="panel-head ranking-head">
-                    <div>
-                      <p className="section-label">Ranking</p>
-                      <h3>{selectedRankingPeriodLabel}</h3>
-                    </div>
+              <div className="panel-head ranking-head">
+                <div>
+                  <p className="section-label">Ranking</p>
+                  <h3>{selectedRankingPeriodLabel}</h3>
+                </div>
 
-                    <label>
-                      期間
-                      <select value={rankingPeriod} onChange={(event) => setRankingPeriod(event.target.value)}>
-                        {rankingPeriodOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="ranking-list">
-                    {rankingSummaries.map((summary, index) => (
-                      <article
-                        key={`${rankingPeriod}-${summary.memberId}`}
-                        className="ranking-item"
-                        onClick={() => {
-                          setLogMemberFilterId(summary.memberId);
-                          setActiveTab("logs");
-                        }}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <span className="ranking-rank">{index + 1}</span>
-                        <div>
-                          <p className="ranking-name">{summary.displayName}</p>
-                          <p className="ranking-meta">
-                            {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
-                            {summary.recordCount}件
-                          </p>
-                        </div>
-                        <div className="ranking-points">{summary.totalPoints}P</div>
-                      </article>
+                <label>
+                  期間
+                  <select value={rankingPeriod} onChange={(event) => setRankingPeriod(event.target.value)}>
+                    {rankingPeriodOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
-                  </div>
-                </>
-              ) : (
-                <p className="helper-text">ランキングは隊長またはAdminだけが見られます。</p>
-              )}
+                  </select>
+                </label>
+              </div>
+
+              <div className="ranking-list">
+                {rankingSummaries.map((summary, index) => (
+                  <article
+                    key={`${rankingPeriod}-${summary.memberId}`}
+                    className="ranking-item"
+                    onClick={() => {
+                      setLogMemberFilterId(summary.memberId);
+                      setActiveTab("logs");
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="ranking-rank">{index + 1}</span>
+                    <div>
+                      <p className="ranking-name">{summary.displayName}</p>
+                      <p className="ranking-meta">
+                        {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
+                        {summary.recordCount}件
+                      </p>
+                    </div>
+                    <div className="ranking-points">{summary.totalPoints}P</div>
+                  </article>
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -1740,6 +1407,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
 
               <form className="record-form" onSubmit={handleSubmit}>
+                <label>
+                  隊員
+                  <select
+                    value={selectedMemberId}
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    required
+                  >
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label className="full-width">
                   LINE貼り付け
                   <textarea
@@ -2496,11 +2178,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <label>
                   対象隊員
                   <select
-                    value={pointDraft.memberId || currentMember.id}
+                    value={pointDraft.memberId || selectedMemberId || members[0]?.id || ""}
                     onChange={(event) => setPointDraft((current) => ({ ...current, memberId: event.target.value }))}
-                    disabled={!canViewRanking}
                   >
-                    {(canViewRanking ? members : [currentMember]).map((member) => (
+                    {members.map((member) => (
                       <option key={member.id} value={member.id}>
                         {member.displayName}
                       </option>
@@ -2607,20 +2288,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
             </section>
           ) : null}
-        </>
-      ) : (
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="section-label">Start</p>
-              <h2>ログインしてください</h2>
-            </div>
-          </div>
-          <p className="helper-text">
-            右上のログインボタンから入ると、ホーム・観察登録・観察ログ・記録照会・追加ポイントが使えるようになります。
-          </p>
-        </section>
-      )}
+      </>
     </div>
   );
 }

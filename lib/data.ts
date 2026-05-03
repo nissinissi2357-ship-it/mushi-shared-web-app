@@ -56,6 +56,12 @@ type PointEntryRow = {
   points: number;
 };
 
+const PUBLIC_ACTOR: Member = {
+  id: "public-viewer",
+  displayName: "公開モード",
+  role: "admin"
+};
+
 export async function getAppData(): Promise<DataResult> {
   try {
     const members = await listMembers();
@@ -106,6 +112,27 @@ export async function getViewerFromSession(session: SessionMember | null): Promi
   } catch {
     return null;
   }
+}
+
+export async function getPublicViewer(): Promise<LoginResult> {
+  const members = await listMembers();
+  const viewerMember = members[0] ?? fallbackMembers[0];
+  const [logs, pointEntries, summaries] = await Promise.all([
+    getLogsForMember(viewerMember.id, "admin"),
+    getPointEntriesForMember(viewerMember.id, "admin"),
+    getAllSummaries()
+  ]);
+
+  return {
+    member: viewerMember,
+    logs,
+    pointEntries,
+    summaries
+  };
+}
+
+export function getPublicActor(): Member {
+  return PUBLIC_ACTOR;
 }
 
 export async function listInquiryObservations(): Promise<InquiryObservation[]> {
@@ -533,7 +560,7 @@ async function buildViewer(member: Member): Promise<LoginResult> {
   };
 }
 
-async function getMemberById(memberId: string): Promise<Member | null> {
+export async function getMemberById(memberId: string): Promise<Member | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("club_members")
