@@ -1337,12 +1337,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <div className="inquiry-panel-head">
               <div>
                 <p className="section-label">Profile</p>
-                <h2>{selectedInquirySpecies}</h2>
+                <h2>
+                  {selectedInquirySpecies}
+                  {inquiryBrowseMode === "species" && selectedInquiryClassification?.scientificName ? (
+                    <>
+                      {" "}
+                      <span className="scientific-name">({selectedInquiryClassification.scientificName})</span>
+                    </>
+                  ) : null}
+                </h2>
                 {selectedInquiryClassification ? (
                   <ClassificationMeta
                     orderName={selectedInquiryClassification.orderName}
                     familyName={selectedInquiryClassification.familyName}
-                    scientificName={selectedInquiryClassification.scientificName}
                     className="helper-text"
                   />
                 ) : null}
@@ -2100,11 +2107,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <div>
                               <p className="record-meta">{formatDateTime(log.observedAt)}</p>
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
-                              <h3 className="record-species">{log.species}</h3>
+                              <h3 className="record-species">
+                                <span>{log.species}</span>
+                                {log.scientificName ? (
+                                  <>
+                                    {" "}
+                                    <span className="scientific-name">({log.scientificName})</span>
+                                  </>
+                                ) : null}
+                              </h3>
                               <ClassificationMeta
                                 orderName={log.orderName}
                                 familyName={log.familyName}
-                                scientificName={log.scientificName}
                               />
                             </div>
                             <div className="record-top-actions">
@@ -3271,31 +3285,29 @@ function formatObservationLocation(location: string, locationDetail?: string | n
   return detail ? `${location} / ${detail}` : location;
 }
 
+function formatTaxonomyLabel(orderName?: string | null, familyName?: string | null) {
+  const orderLabel = orderName ? `${orderName}目` : "";
+  const familyLabel = familyName ? `${familyName}科` : "";
+  return `${orderLabel}${familyLabel}`.trim();
+}
+
 function ClassificationMeta({
   orderName,
   familyName,
-  scientificName,
   className = "record-meta"
 }: {
   orderName?: string | null;
   familyName?: string | null;
-  scientificName?: string | null;
   className?: string;
 }) {
-  const hasAnyValue = Boolean(orderName || familyName || scientificName);
-  if (!hasAnyValue) {
+  const taxonomyLabel = formatTaxonomyLabel(orderName, familyName);
+  if (!taxonomyLabel) {
     return null;
   }
 
   return (
     <p className={`classification-meta ${className}`}>
-      {orderName ? <span>目名: {orderName}</span> : null}
-      {familyName ? <span>科名: {familyName}</span> : null}
-      {scientificName ? (
-        <span>
-          学名: <span className="scientific-name">{scientificName}</span>
-        </span>
-      ) : null}
+      <span>{taxonomyLabel}</span>
     </p>
   );
 }

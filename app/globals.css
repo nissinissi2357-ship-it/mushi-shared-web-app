@@ -155,6 +155,9 @@ select {
 .scientific-name {
   font-family: "Times New Roman", Times, serif;
   font-style: italic;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
 }
 
 .auth-overlay {
