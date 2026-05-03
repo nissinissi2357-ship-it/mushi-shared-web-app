@@ -56,7 +56,7 @@ export type MemberSummary = {
   latestObservedAt: string | null;
 };
 
-export type TabId = "home" | "record" | "logs" | "inquiry" | "points";
+export type TabId = "home" | "record" | "logs" | "inquiry" | "points" | "members";
 
 export type ObservationInsertInput = {
   observedAt: string;

@@ -30,7 +30,8 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "record", label: "観察登録" },
   { id: "logs", label: "観察ログ" },
   { id: "inquiry", label: "記録照会" },
-  { id: "points", label: "追加ポイント" }
+  { id: "points", label: "追加ポイント" },
+  { id: "members", label: "隊員管理" }
 ];
 
 type AppShellProps = {
@@ -180,6 +181,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
+  const [memberManagerPasscode, setMemberManagerPasscode] = useState("");
+  const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
@@ -203,7 +206,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const currentSummary = summaries.find((summary) => summary.memberId === selectedMemberId) ?? null;
   const canViewRanking = true;
-  const isAdmin = false;
   const currentYear = new Date().getFullYear();
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
@@ -778,6 +780,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleAdminCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -787,7 +794,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(adminCreateDraft)
+        body: JSON.stringify({
+          ...adminCreateDraft,
+          adminPasscode: memberManagerPasscode
+        })
       });
 
       const payload = (await response.json()) as { member?: Member; error?: string };
@@ -806,6 +816,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminRoleUpdate(memberId: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -816,6 +831,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          adminPasscode: memberManagerPasscode,
           action: "update-role",
           role: adminRoleDrafts[memberId]
         })
@@ -836,6 +852,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminResetPasscode(memberId: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -846,6 +867,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          adminPasscode: memberManagerPasscode,
           action: "reset-passcode"
         })
       });
@@ -865,6 +887,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminDelete(memberId: string, displayName: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     const confirmed = window.confirm(`${displayName} さんのアカウントを削除しますか？`);
     if (!confirmed) {
       return;
@@ -875,7 +902,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       const response = await fetch(`/api/admin/members/${memberId}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          adminPasscode: memberManagerPasscode
+        })
       });
 
       const payload = (await response.json()) as { error?: string };
@@ -1167,6 +1200,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function canManageMemberData(memberId: string) {
     return Boolean(memberId);
+  }
+
+  function handleUnlockMemberManager(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (memberManagerPasscode.trim() !== "0000") {
+      setIsMemberManagerUnlocked(false);
+      setStatusMessage("隊員管理のパスワードが違います。");
+      return;
+    }
+
+    setIsMemberManagerUnlocked(true);
+    setStatusMessage("隊員管理を開きました。");
   }
 
   return (
@@ -2286,6 +2332,166 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   );
                 })}
               </div>
+            </section>
+          ) : null}
+
+          {activeTab === "members" ? (
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-label">Members</p>
+                  <h2>隊員管理</h2>
+                  <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の0000リセット、削除ができます。</p>
+                </div>
+
+                {isMemberManagerUnlocked ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => {
+                      setIsMemberManagerUnlocked(false);
+                      setStatusMessage("隊員管理を閉じました。");
+                    }}
+                  >
+                    閉じる
+                  </button>
+                ) : null}
+              </div>
+
+              {!isMemberManagerUnlocked ? (
+                <form className="record-form" onSubmit={handleUnlockMemberManager}>
+                  <label>
+                    管理パスワード
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      placeholder="0000"
+                      value={memberManagerPasscode}
+                      onChange={(event) => setMemberManagerPasscode(event.target.value)}
+                    />
+                  </label>
+
+                  <div className="form-actions full-width">
+                    <button type="submit" className="primary-button">
+                      入る
+                    </button>
+                  </div>
+
+                  <p className="helper-text full-width">隊員管理はパスワード `0000` で開けます。</p>
+                </form>
+              ) : (
+                <>
+                  <form className="record-form" onSubmit={handleAdminCreate}>
+                    <label>
+                      新しいアカウント名
+                      <input
+                        type="text"
+                        placeholder="例: たろう"
+                        value={adminCreateDraft.displayName}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({ ...current, displayName: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      初期合言葉
+                      <input
+                        type="password"
+                        placeholder="4文字以上"
+                        value={adminCreateDraft.passcode}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({ ...current, passcode: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      権限
+                      <select
+                        value={adminCreateDraft.role}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({
+                            ...current,
+                            role: event.target.value as MemberRole
+                          }))
+                        }
+                      >
+                        <option value="member">隊員</option>
+                        <option value="captain">隊長</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+
+                    <div className="form-actions full-width">
+                      <button type="submit" className="primary-button" disabled={isAdminSaving}>
+                        {isAdminSaving ? "作成中..." : "アカウントを作成"}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="record-list">
+                    {members.map((member) => (
+                      <article key={member.id} className="record-card">
+                        <div className="record-top">
+                          <div>
+                            <p className="record-meta">{member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"}</p>
+                            <h3 className="record-species">{member.displayName}</h3>
+                          </div>
+                        </div>
+
+                        <div className="record-form compact-member-actions">
+                          <label>
+                            権限
+                            <select
+                              value={adminRoleDrafts[member.id] ?? member.role}
+                              onChange={(event) =>
+                                setAdminRoleDrafts((current) => ({
+                                  ...current,
+                                  [member.id]: event.target.value as MemberRole
+                                }))
+                              }
+                            >
+                              <option value="member">隊員</option>
+                              <option value="captain">隊長</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </label>
+
+                          <div className="form-actions full-width">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => handleAdminRoleUpdate(member.id)}
+                              disabled={isAdminSaving}
+                            >
+                              権限を更新
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => handleAdminResetPasscode(member.id)}
+                              disabled={isAdminSaving}
+                            >
+                              合言葉を0000に
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleAdminDelete(member.id, member.displayName)}
+                              disabled={isAdminSaving}
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              )}
             </section>
           ) : null}
       </>
