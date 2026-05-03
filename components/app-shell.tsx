@@ -98,6 +98,14 @@ type InquiryDetailRow = {
   count: number;
 };
 
+type InquiryDescendantSpeciesRow = {
+  key: string;
+  familyName: string;
+  species: string;
+  scientificName: string;
+  count: number;
+};
+
 type InquiryBrowseMode = "species" | "family" | "order";
 
 function toLocalInputValue(date = new Date()) {
@@ -376,12 +384,28 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       return null;
     }
 
+    if (inquiryBrowseMode === "order") {
+      return {
+        orderName: selectedInquirySpecies,
+        familyName: "",
+        scientificName: ""
+      };
+    }
+
+    if (inquiryBrowseMode === "family") {
+      return {
+        orderName: firstLog.orderName ?? "",
+        familyName: selectedInquirySpecies,
+        scientificName: ""
+      };
+    }
+
     return {
       orderName: firstLog.orderName ?? "",
       familyName: firstLog.familyName ?? "",
       scientificName: firstLog.scientificName ?? ""
     };
-  }, [selectedInquirySpeciesLogs]);
+  }, [inquiryBrowseMode, selectedInquirySpecies, selectedInquirySpeciesLogs]);
 
   const inquiryLocationRows = useMemo(
     () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
@@ -395,6 +419,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const inquiryDetailRows = useMemo(
     () => buildInquiryDetailRows(selectedInquiryYearLogs),
     [selectedInquiryYearLogs]
+  );
+  const inquiryDescendantSpeciesRows = useMemo(
+    () => buildInquiryDescendantSpeciesRows(selectedInquiryYearLogs, inquiryBrowseMode),
+    [inquiryBrowseMode, selectedInquiryYearLogs]
   );
   const summaryYear = new Date().getFullYear();
 
@@ -1433,6 +1461,55 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </tfoot>
               </table>
             </div>
+
+            {inquiryBrowseMode !== "species" ? (
+              <section className="inquiry-detail-block">
+                <div className="inquiry-panel-head">
+                  <div>
+                    <p className="section-label">Species</p>
+                    <h4>下位の種一覧</h4>
+                  </div>
+                  <p className="helper-text">
+                    {inquiryBrowseMode === "order"
+                      ? "この目に含まれる報告種を、科ごとに一覧できます。"
+                      : "この科に含まれる報告種を一覧できます。"}
+                  </p>
+                </div>
+
+                {inquiryDescendantSpeciesRows.length === 0 ? (
+                  <p className="helper-text">この年の下位種記録はありません。</p>
+                ) : (
+                  <div className="table-scroll">
+                    <table className="inquiry-table inquiry-detail-table">
+                      <thead>
+                        <tr>
+                          {inquiryBrowseMode === "order" ? <th>科名</th> : null}
+                          <th>種名</th>
+                          <th>件数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inquiryDescendantSpeciesRows.map((row) => (
+                          <tr key={row.key}>
+                            {inquiryBrowseMode === "order" ? <td>{row.familyName ? `${row.familyName}科` : "—"}</td> : null}
+                            <td>
+                              <strong>{row.species}</strong>
+                              {row.scientificName ? (
+                                <>
+                                  {" "}
+                                  <span className="scientific-name">({row.scientificName})</span>
+                                </>
+                              ) : null}
+                            </td>
+                            <td>{row.count}件</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            ) : null}
 
             <section className="inquiry-detail-block">
               <div className="inquiry-panel-head">
@@ -3557,6 +3634,51 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
     }
 
     return left.locationDetail.localeCompare(right.locationDetail, "ja-JP");
+  });
+}
+
+function buildInquiryDescendantSpeciesRows(
+  logs: InquiryObservation[],
+  browseMode: InquiryBrowseMode
+): InquiryDescendantSpeciesRow[] {
+  if (browseMode === "species") {
+    return [];
+  }
+
+  const grouped = new Map<string, InquiryDescendantSpeciesRow>();
+
+  for (const log of logs) {
+    const familyName = log.familyName ?? "";
+    const scientificName = log.scientificName ?? "";
+    const key = `${familyName}||${log.species}||${scientificName}`;
+    const current =
+      grouped.get(key) ??
+      {
+        key,
+        familyName,
+        species: log.species,
+        scientificName,
+        count: 0
+      };
+
+    current.count += 1;
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()].sort((left, right) => {
+    if (browseMode === "order") {
+      const familyComparison = left.familyName.localeCompare(right.familyName, "ja-JP");
+      if (familyComparison !== 0) {
+        return familyComparison;
+      }
+    }
+
+    const countComparison = right.count - left.count;
+    if (countComparison !== 0) {
+      return countComparison;
+    }
+
+    return left.species.localeCompare(right.species, "ja-JP");
   });
 }
 
