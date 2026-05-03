@@ -145,6 +145,18 @@ select {
   line-height: 1.7;
 }
 
+.classification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+
+.scientific-name {
+  font-family: "Times New Roman", Times, serif;
+  font-style: italic;
+}
+
 .auth-overlay {
   position: fixed;
   inset: 0;

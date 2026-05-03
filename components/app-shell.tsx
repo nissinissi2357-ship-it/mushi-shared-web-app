@@ -1339,15 +1339,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <p className="section-label">Profile</p>
                 <h2>{selectedInquirySpecies}</h2>
                 {selectedInquiryClassification ? (
-                  <p className="helper-text">
-                    {[
-                      selectedInquiryClassification.orderName ? `目: ${selectedInquiryClassification.orderName}` : "",
-                      selectedInquiryClassification.familyName ? `科: ${selectedInquiryClassification.familyName}` : "",
-                      selectedInquiryClassification.scientificName ? `学名: ${selectedInquiryClassification.scientificName}` : ""
-                    ]
-                      .filter(Boolean)
-                      .join(" / ") || "分類情報なし"}
-                  </p>
+                  <ClassificationMeta
+                    orderName={selectedInquiryClassification.orderName}
+                    familyName={selectedInquiryClassification.familyName}
+                    scientificName={selectedInquiryClassification.scientificName}
+                    className="helper-text"
+                  />
                 ) : null}
               </div>
 
@@ -2104,11 +2101,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               <p className="record-meta">{formatDateTime(log.observedAt)}</p>
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
                               <h3 className="record-species">{log.species}</h3>
-                              {log.orderName || log.familyName || log.scientificName ? (
-                                <p className="record-meta">
-                                  {[log.orderName, log.familyName, log.scientificName].filter(Boolean).join(" / ")}
-                                </p>
-                              ) : null}
+                              <ClassificationMeta
+                                orderName={log.orderName}
+                                familyName={log.familyName}
+                                scientificName={log.scientificName}
+                              />
                             </div>
                             <div className="record-top-actions">
                               <div className="point-badge">{log.points}P</div>
@@ -3272,6 +3269,35 @@ function mergeResolvedRegion(currentLocation: string, resolvedRegion: string) {
 function formatObservationLocation(location: string, locationDetail?: string | null) {
   const detail = locationDetail?.trim();
   return detail ? `${location} / ${detail}` : location;
+}
+
+function ClassificationMeta({
+  orderName,
+  familyName,
+  scientificName,
+  className = "record-meta"
+}: {
+  orderName?: string | null;
+  familyName?: string | null;
+  scientificName?: string | null;
+  className?: string;
+}) {
+  const hasAnyValue = Boolean(orderName || familyName || scientificName);
+  if (!hasAnyValue) {
+    return null;
+  }
+
+  return (
+    <p className={`classification-meta ${className}`}>
+      {orderName ? <span>目名: {orderName}</span> : null}
+      {familyName ? <span>科名: {familyName}</span> : null}
+      {scientificName ? (
+        <span>
+          学名: <span className="scientific-name">{scientificName}</span>
+        </span>
+      ) : null}
+    </p>
+  );
 }
 
 function MonthlyTrendChart({
