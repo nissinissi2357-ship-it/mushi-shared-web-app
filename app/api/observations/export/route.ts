@@ -17,7 +17,10 @@ function buildCsv(
     locationDetail?: string | null;
     latitude?: number | null;
     longitude?: number | null;
+    orderName?: string | null;
+    familyName?: string | null;
     species: string;
+    scientificName?: string | null;
     points: number;
     scoringMemo: string;
     imageUrl?: string | null;
@@ -31,7 +34,10 @@ function buildCsv(
     "詳細場所",
     "緯度",
     "経度",
+    "目名",
+    "科名",
     "種名",
+    "学名",
     "ポイント",
     "隊長メモ",
     "写真URL",
@@ -48,7 +54,10 @@ function buildCsv(
         row.locationDetail || "",
         row.latitude ?? "",
         row.longitude ?? "",
+        row.orderName || "",
+        row.familyName || "",
         row.species,
+        row.scientificName || "",
         row.points,
         row.scoringMemo || "",
         row.imageUrl || "",

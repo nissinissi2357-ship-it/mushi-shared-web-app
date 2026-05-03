@@ -13,6 +13,9 @@ export async function PATCH(
     const location = String(body.location || "").trim();
     const locationDetail = String(body.locationDetail || "").trim();
     const species = String(body.species || "").trim();
+    const orderName = String(body.orderName || "").trim();
+    const familyName = String(body.familyName || "").trim();
+    const scientificName = String(body.scientificName || "").trim();
     const scoringMemo = String(body.scoringMemo || "").trim();
     const points = Number(body.points);
     const latitude = body.latitude === null || body.latitude === undefined || body.latitude === "" ? null : Number(body.latitude);
@@ -39,7 +42,10 @@ export async function PATCH(
         locationDetail,
         latitude,
         longitude,
+        orderName,
+        familyName,
         species,
+        scientificName,
         points,
         scoringMemo
       },

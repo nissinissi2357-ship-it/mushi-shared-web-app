@@ -15,7 +15,10 @@ export type ObservationLog = {
   locationDetail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  orderName?: string | null;
+  familyName?: string | null;
   species: string;
+  scientificName?: string | null;
   points: number;
   scoringMemo: string;
   imageUrl?: string | null;
@@ -31,7 +34,10 @@ export type InquiryObservation = {
   observedAt: string;
   location: string;
   locationDetail?: string | null;
+  orderName?: string | null;
+  familyName?: string | null;
   species: string;
+  scientificName?: string | null;
 };
 
 export type PointEntry = {
@@ -64,7 +70,10 @@ export type ObservationInsertInput = {
   locationDetail?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  orderName?: string | null;
+  familyName?: string | null;
   species: string;
+  scientificName?: string | null;
   points: number;
   scoringMemo: string;
 };

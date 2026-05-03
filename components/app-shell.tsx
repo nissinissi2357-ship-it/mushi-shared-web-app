@@ -13,6 +13,7 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
+import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
   InitialViewerState,
@@ -47,7 +48,10 @@ type DraftObservation = {
   locationDetail: string;
   latitude: string;
   longitude: string;
+  orderName: string;
+  familyName: string;
   species: string;
+  scientificName: string;
   points: string;
   scoringMemo: string;
 };
@@ -94,6 +98,8 @@ type InquiryDetailRow = {
   count: number;
 };
 
+type InquiryBrowseMode = "species" | "family" | "order";
+
 function toLocalInputValue(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
@@ -110,7 +116,10 @@ function getDefaultObservationDraft(): DraftObservation {
     locationDetail: "",
     latitude: "",
     longitude: "",
+    orderName: "",
+    familyName: "",
     species: "",
+    scientificName: "",
     points: "",
     scoringMemo: ""
   };
@@ -188,6 +197,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
   const [inquirySearchMode, setInquirySearchMode] = useState<"and" | "or">("and");
+  const [inquiryBrowseMode, setInquiryBrowseMode] = useState<InquiryBrowseMode>("species");
+  const [inquirySearchOrder, setInquirySearchOrder] = useState("");
+  const [inquirySearchFamily, setInquirySearchFamily] = useState("");
   const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
   const [inquirySearchLocation, setInquirySearchLocation] = useState("");
   const [inquirySearchDate, setInquirySearchDate] = useState("");
@@ -256,12 +268,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && pointMemberFilterId
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
-  const hasInquirySearch = Boolean(inquirySearchSpecies.trim() || inquirySearchLocation.trim() || inquirySearchDate);
+  const hasInquirySearch = Boolean(
+    inquirySearchOrder.trim() ||
+      inquirySearchFamily.trim() ||
+      inquirySearchSpecies.trim() ||
+      inquirySearchLocation.trim() ||
+      inquirySearchDate
+  );
 
   const filteredInquiryLogs = useMemo(() => {
+    const orderQuery = inquirySearchOrder.trim().toLocaleLowerCase("ja-JP");
+    const familyQuery = inquirySearchFamily.trim().toLocaleLowerCase("ja-JP");
     const speciesQuery = inquirySearchSpecies.trim().toLocaleLowerCase("ja-JP");
     const locationQuery = inquirySearchLocation.trim().toLocaleLowerCase("ja-JP");
     const activeChecks = [
+      orderQuery
+        ? (log: InquiryObservation) => (log.orderName ?? "").toLocaleLowerCase("ja-JP").includes(orderQuery)
+        : null,
+      familyQuery
+        ? (log: InquiryObservation) => (log.familyName ?? "").toLocaleLowerCase("ja-JP").includes(familyQuery)
+        : null,
       speciesQuery
         ? (log: InquiryObservation) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
         : null,
@@ -279,26 +305,53 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return inquiryLogs.filter((log) =>
       inquirySearchMode === "and" ? activeChecks.every((check) => check(log)) : activeChecks.some((check) => check(log))
     );
-  }, [inquiryLogs, inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+  }, [
+    inquiryLogs,
+    inquirySearchDate,
+    inquirySearchFamily,
+    inquirySearchLocation,
+    inquirySearchMode,
+    inquirySearchOrder,
+    inquirySearchSpecies
+  ]);
 
-  const inquirySpeciesList = useMemo(
-    () =>
-      [...new Set(filteredInquiryLogs.map((log) => log.species))]
-        .filter(Boolean)
-        .sort((left, right) => left.localeCompare(right, "ja-JP")),
-    [filteredInquiryLogs]
-  );
+  const inquiryItemList = useMemo(() => {
+    const values = filteredInquiryLogs.map((log) => {
+      if (inquiryBrowseMode === "order") {
+        return log.orderName ?? "";
+      }
+
+      if (inquiryBrowseMode === "family") {
+        return log.familyName ?? "";
+      }
+
+      return log.species;
+    });
+
+    return [...new Set(values)].filter(Boolean).sort((left, right) => left.localeCompare(right, "ja-JP"));
+  }, [filteredInquiryLogs, inquiryBrowseMode]);
 
   const inquirySpeciesPageSize = 10;
-  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquirySpeciesList.length / inquirySpeciesPageSize));
-  const paginatedInquirySpecies = inquirySpeciesList.slice(
+  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquiryItemList.length / inquirySpeciesPageSize));
+  const paginatedInquirySpecies = inquiryItemList.slice(
     (inquirySpeciesPage - 1) * inquirySpeciesPageSize,
     inquirySpeciesPage * inquirySpeciesPageSize
   );
 
   const selectedInquirySpeciesLogs = useMemo(
-    () => filteredInquiryLogs.filter((log) => log.species === selectedInquirySpecies),
-    [filteredInquiryLogs, selectedInquirySpecies]
+    () =>
+      filteredInquiryLogs.filter((log) => {
+        if (inquiryBrowseMode === "order") {
+          return (log.orderName ?? "") === selectedInquirySpecies;
+        }
+
+        if (inquiryBrowseMode === "family") {
+          return (log.familyName ?? "") === selectedInquirySpecies;
+        }
+
+        return log.species === selectedInquirySpecies;
+      }),
+    [filteredInquiryLogs, inquiryBrowseMode, selectedInquirySpecies]
   );
 
   const inquiryYearOptions = useMemo(
@@ -316,6 +369,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       ),
     [selectedInquirySpeciesLogs, selectedInquiryYear]
   );
+
+  const selectedInquiryClassification = useMemo(() => {
+    const firstLog = selectedInquirySpeciesLogs[0];
+    if (!firstLog) {
+      return null;
+    }
+
+    return {
+      orderName: firstLog.orderName ?? "",
+      familyName: firstLog.familyName ?? "",
+      scientificName: firstLog.scientificName ?? ""
+    };
+  }, [selectedInquirySpeciesLogs]);
 
   const inquiryLocationRows = useMemo(
     () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
@@ -378,8 +444,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }, [rankingPeriod, rankingPeriodOptions]);
 
   useEffect(() => {
-    setSelectedInquirySpecies((current) => (current && inquirySpeciesList.includes(current) ? current : ""));
-  }, [inquirySpeciesList]);
+    setSelectedInquirySpecies((current) => (current && inquiryItemList.includes(current) ? current : ""));
+  }, [inquiryItemList]);
 
   useEffect(() => {
     setSelectedInquiryYear((current) =>
@@ -393,7 +459,15 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   useEffect(() => {
     setInquirySpeciesPage(1);
-  }, [inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+  }, [
+    inquiryBrowseMode,
+    inquirySearchDate,
+    inquirySearchFamily,
+    inquirySearchLocation,
+    inquirySearchMode,
+    inquirySearchOrder,
+    inquirySearchSpecies
+  ]);
 
   useEffect(() => {
     setInquirySpeciesPage((current) => Math.min(current, totalInquirySpeciesPages));
@@ -512,6 +586,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     await Promise.all([refreshMembers(), refreshViewerState()]);
   }
 
+  function mergeSpeciesClassification(
+    speciesName: string,
+    current: Pick<DraftObservation, "orderName" | "familyName" | "scientificName">
+  ) {
+    const classification = lookupSpeciesClassification(speciesName);
+
+    return {
+      orderName: classification.orderName || current.orderName,
+      familyName: classification.familyName || current.familyName,
+      scientificName: classification.scientificName || current.scientificName
+    };
+  }
+
   function revealSavedLog(payload: LoginResult, log: ObservationLog) {
     setIsLogSearchOpen(false);
     setLogSearchMode("and");
@@ -620,6 +707,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function applyParsedToDraft(rawText: string) {
     const parsed = parseCaptainMessage(rawText);
+    const mergedClassification = mergeSpeciesClassification(parsed.species || "", draft);
 
     setDraft((current) => ({
       observedAt: parsed.observedAt || current.observedAt,
@@ -627,7 +715,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: current.locationDetail,
       latitude: current.latitude,
       longitude: current.longitude,
+      orderName: mergedClassification.orderName,
+      familyName: mergedClassification.familyName,
       species: parsed.species || current.species,
+      scientificName: mergedClassification.scientificName,
       points: parsed.points !== null ? String(parsed.points) : current.points,
       scoringMemo: parsed.scoringMemo || current.scoringMemo
     }));
@@ -934,7 +1025,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         locationDetail: nextDraft.locationDetail,
         latitude: nextDraft.latitude ? Number(nextDraft.latitude) : null,
         longitude: nextDraft.longitude ? Number(nextDraft.longitude) : null,
+        orderName: nextDraft.orderName,
+        familyName: nextDraft.familyName,
         species: nextDraft.species,
+        scientificName: nextDraft.scientificName,
         points: Number(nextDraft.points),
         scoringMemo: nextDraft.scoringMemo
       })
@@ -991,7 +1085,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: draft.locationDetail,
       latitude: draft.latitude,
       longitude: draft.longitude,
+      orderName: mergeSpeciesClassification(parsed.species || draft.species, draft).orderName,
+      familyName: mergeSpeciesClassification(parsed.species || draft.species, draft).familyName,
       species: parsed.species || draft.species,
+      scientificName: mergeSpeciesClassification(parsed.species || draft.species, draft).scientificName,
       points: parsed.points !== null ? String(parsed.points) : draft.points,
       scoringMemo: parsed.scoringMemo || draft.scoringMemo
     };
@@ -1028,7 +1125,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: log.locationDetail || "",
       latitude: log.latitude === null || log.latitude === undefined ? "" : String(log.latitude),
       longitude: log.longitude === null || log.longitude === undefined ? "" : String(log.longitude),
+      orderName: log.orderName || "",
+      familyName: log.familyName || "",
       species: log.species,
+      scientificName: log.scientificName || "",
       points: String(log.points),
       scoringMemo: log.scoringMemo
     });
@@ -1050,7 +1150,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             locationDetail: editingLogDraft.locationDetail,
             latitude: editingLogDraft.latitude ? Number(editingLogDraft.latitude) : null,
             longitude: editingLogDraft.longitude ? Number(editingLogDraft.longitude) : null,
+            orderName: editingLogDraft.orderName,
+            familyName: editingLogDraft.familyName,
             species: editingLogDraft.species,
+            scientificName: editingLogDraft.scientificName,
             points: Number(editingLogDraft.points),
             scoringMemo: editingLogDraft.scoringMemo
         })
@@ -1235,6 +1338,17 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               <div>
                 <p className="section-label">Profile</p>
                 <h2>{selectedInquirySpecies}</h2>
+                {selectedInquiryClassification ? (
+                  <p className="helper-text">
+                    {[
+                      selectedInquiryClassification.orderName ? `目: ${selectedInquiryClassification.orderName}` : "",
+                      selectedInquiryClassification.familyName ? `科: ${selectedInquiryClassification.familyName}` : "",
+                      selectedInquiryClassification.scientificName ? `学名: ${selectedInquiryClassification.scientificName}` : ""
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || "分類情報なし"}
+                  </p>
+                ) : null}
               </div>
 
               <div className="inline-actions">
@@ -1552,8 +1666,47 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     type="text"
                     placeholder="例: セボシジョウカイ"
                     value={draft.species}
-                    onChange={(event) => setDraft((current) => ({ ...current, species: event.target.value }))}
+                    onChange={(event) =>
+                      setDraft((current) => {
+                        const species = event.target.value;
+                        return {
+                          ...current,
+                          ...mergeSpeciesClassification(species, current),
+                          species
+                        };
+                      })
+                    }
                     required
+                  />
+                </label>
+
+                <label>
+                  目
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.orderName}
+                    onChange={(event) => setDraft((current) => ({ ...current, orderName: event.target.value }))}
+                  />
+                </label>
+
+                <label>
+                  科
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.familyName}
+                    onChange={(event) => setDraft((current) => ({ ...current, familyName: event.target.value }))}
+                  />
+                </label>
+
+                <label className="full-width">
+                  学名
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.scientificName}
+                    onChange={(event) => setDraft((current) => ({ ...current, scientificName: event.target.value }))}
                   />
                 </label>
 
@@ -1870,7 +2023,44 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               type="text"
                               value={editingLogDraft.species}
                               onChange={(event) =>
-                                setEditingLogDraft((current) => ({ ...current, species: event.target.value }))
+                                setEditingLogDraft((current) => {
+                                  const species = event.target.value;
+                                  return {
+                                    ...current,
+                                    ...mergeSpeciesClassification(species, current),
+                                    species
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            目
+                            <input
+                              type="text"
+                              value={editingLogDraft.orderName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, orderName: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            科
+                            <input
+                              type="text"
+                              value={editingLogDraft.familyName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, familyName: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label className="full-width">
+                            学名
+                            <input
+                              type="text"
+                              value={editingLogDraft.scientificName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, scientificName: event.target.value }))
                               }
                             />
                           </label>
@@ -1914,6 +2104,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               <p className="record-meta">{formatDateTime(log.observedAt)}</p>
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
                               <h3 className="record-species">{log.species}</h3>
+                              {log.orderName || log.familyName || log.scientificName ? (
+                                <p className="record-meta">
+                                  {[log.orderName, log.familyName, log.scientificName].filter(Boolean).join(" / ")}
+                                </p>
+                              ) : null}
                             </div>
                             <div className="record-top-actions">
                               <div className="point-badge">{log.points}P</div>
@@ -2015,10 +2210,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Inquiry</p>
                   <h2>記録照会</h2>
-                  <p className="helper-text">全隊員の観察記録から、種類ごとの出現状況を年ごとに確認できます。</p>
+                  <p className="helper-text">全隊員の観察記録から、目・科・種名ごとの出現状況を年ごとに確認できます。</p>
                 </div>
 
                 <div className="toolbar-row">
+                  <label>
+                    表示単位
+                    <select
+                      value={inquiryBrowseMode}
+                      onChange={(event) => setInquiryBrowseMode(event.target.value as InquiryBrowseMode)}
+                    >
+                      <option value="species">種名</option>
+                      <option value="family">科名</option>
+                      <option value="order">目名</option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     className="secondary-button"
@@ -2051,6 +2257,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </div>
 
                     <div className="search-grid">
+                      <label>
+                        目
+                        <input
+                          type="text"
+                          placeholder="例: コウチュウ"
+                          value={inquirySearchOrder}
+                          onChange={(event) => setInquirySearchOrder(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        科
+                        <input
+                          type="text"
+                          placeholder="例: ハネカクシ"
+                          value={inquirySearchFamily}
+                          onChange={(event) => setInquirySearchFamily(event.target.value)}
+                        />
+                      </label>
+
                       <label>
                         種名
                         <input
@@ -2086,6 +2312,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                         type="button"
                         className="ghost-button"
                         onClick={() => {
+                          setInquirySearchOrder("");
+                          setInquirySearchFamily("");
                           setInquirySearchSpecies("");
                           setInquirySearchLocation("");
                           setInquirySearchDate("");
@@ -2104,24 +2332,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               {!isInquiryLoading ? (
                 <p className="helper-text">
-                  {filteredInquiryLogs.length}件の記録から、{inquirySpeciesList.length}種類を表示しています。
+                  {filteredInquiryLogs.length}件の記録から、{inquiryItemList.length}
+                  {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示しています。
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquirySpeciesList.length === 0 ? (
+              {!isInquiryLoading && inquiryItemList.length === 0 ? (
                 <p className="helper-text">
                   {hasInquirySearch ? "検索条件に合う記録はありません。" : "照会できる観察記録がまだありません。"}
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquirySpeciesList.length > 0 ? (
+              {!isInquiryLoading && inquiryItemList.length > 0 ? (
                 <section className="inquiry-species-panel">
                   <div className="inquiry-panel-head">
                     <div>
-                      <p className="section-label">Species</p>
-                      <h3>種類一覧</h3>
+                      <p className="section-label">List</p>
+                      <h3>{inquiryBrowseMode === "species" ? "種類一覧" : inquiryBrowseMode === "family" ? "科一覧" : "目一覧"}</h3>
                     </div>
-                    <p className="helper-text">50音順に並んでいます。種類名を押すと詳細が開きます。</p>
+                    <p className="helper-text">
+                      50音順に並んでいます。{inquiryBrowseMode === "species" ? "種名" : inquiryBrowseMode === "family" ? "科名" : "目名"}を押すと詳細が開きます。
+                    </p>
                   </div>
 
                   <div className="inquiry-species-rows">
@@ -2140,8 +2371,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                   <div className="pagination-bar pagination-bar-bottom">
                     <p className="helper-text">
-                      {inquirySpeciesList.length}種類中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
-                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquirySpeciesList.length)}種類を表示
+                      {inquiryItemList.length}
+                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
+                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquiryItemList.length)}
+                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示
                     </p>
                     <div className="pagination-actions logs-pagination-actions">
                       <button
