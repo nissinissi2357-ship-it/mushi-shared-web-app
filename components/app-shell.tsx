@@ -424,12 +424,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     () => buildInquiryDescendantSpeciesRows(selectedInquiryYearLogs, inquiryBrowseMode),
     [inquiryBrowseMode, selectedInquiryYearLogs]
   );
-  const summaryYear = new Date().getFullYear();
-
-  const monthlyPointSeries = useMemo(
-    () => buildMonthlyPointSeries(members, logs, pointEntries),
-    [logs, members, pointEntries]
-  );
+  const monthlyOrderCountSeries = useMemo(() => buildMonthlyOrderCountSeries(logs), [logs]);
 
   const rankingPeriodOptions = useMemo(
     () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
@@ -1576,10 +1571,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               <div className="home-copy">
                 <p>今年のランキングを中心に見られるホーム画面です。年が変わると、その年のポイントで新しく集計されます。</p>
-                <p>下のグラフでは、直近6か月のポイントを隊員ごとの積み上げで確認できます。</p>
+                <p>下のグラフでは、直近6か月の観察件数を目ごとの積み上げで確認できます。</p>
               </div>
 
-              <MonthlyTrendChart data={monthlyPointSeries} />
+              <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
 
               <div className="panel-head ranking-head">
                 <div>
@@ -3389,13 +3384,13 @@ function ClassificationMeta({
   );
 }
 
-function MonthlyTrendChart({
+function MonthlyOrderTrendChart({
   data
 }: {
   data: Array<{
     label: string;
     total: number;
-    segments: Array<{ memberId: string; displayName: string; points: number; color: string }>;
+    segments: Array<{ key: string; label: string; count: number; color: string }>;
   }>;
 }) {
   const width = 640;
@@ -3413,9 +3408,9 @@ function MonthlyTrendChart({
     const x = paddingX + index * (barWidth + barGap);
     let stackedHeight = 0;
     const segments = item.segments
-      .filter((segment) => segment.points > 0)
+      .filter((segment) => segment.count > 0)
       .map((segment) => {
-        const segmentHeight = (segment.points / maxValue) * graphHeight;
+        const segmentHeight = (segment.count / maxValue) * graphHeight;
         const y = paddingTop + graphHeight - stackedHeight - segmentHeight;
         stackedHeight += segmentHeight;
         return {
@@ -3436,10 +3431,8 @@ function MonthlyTrendChart({
     };
   });
 
-  const legendMembers = Array.from(
-    new Map(
-      data.flatMap((item) => item.segments.map((segment) => [segment.memberId, segment] as const))
-    ).values()
+  const legendOrders = Array.from(
+    new Map(data.flatMap((item) => item.segments.map((segment) => [segment.key, segment] as const))).values()
   );
 
   return (
@@ -3447,16 +3440,16 @@ function MonthlyTrendChart({
       <div className="trend-head">
         <div>
           <p className="section-label">Trend</p>
-          <h3>月別ポイント推移</h3>
+          <h3>月別の目ごとの観察件数</h3>
         </div>
-        <p className="helper-text">直近6か月の観察ポイントと追加ポイントの合計を、隊員ごとの積み上げで表示しています。</p>
+        <p className="helper-text">直近6か月の観察記録を、目ごとの件数で積み上げ表示しています。</p>
       </div>
 
       {data.length === 0 ? (
-        <p className="helper-text">まだグラフに表示できるポイントがありません。</p>
+        <p className="helper-text">まだグラフに表示できる観察記録がありません。</p>
       ) : (
         <>
-          <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="月別ポイント推移">
+          <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="月別の目ごとの観察件数">
             <line
               x1={paddingX}
               y1={paddingTop + graphHeight}
@@ -3468,12 +3461,11 @@ function MonthlyTrendChart({
               <g key={bar.label}>
                 {bar.segments.map((segment) => (
                   <rect
-                    key={`${bar.label}-${segment.memberId}`}
+                    key={`${bar.label}-${segment.key}`}
                     x={segment.x}
                     y={segment.y}
                     width={segment.width}
                     height={Math.max(segment.height, 0)}
-                    rx="8"
                     fill={segment.color}
                     className="trend-stack"
                   />
@@ -3482,18 +3474,18 @@ function MonthlyTrendChart({
                   {bar.label}
                 </text>
                 <text x={bar.x + bar.width / 2} y={bar.topY - 10} textAnchor="middle" className="trend-value">
-                  {bar.total}P
+                  {bar.total}件
                 </text>
               </g>
             ))}
           </svg>
 
           <div className="trend-legend">
-            {legendMembers.map((member) => (
-              <div key={member.memberId} className="trend-legend-item">
-                <span className="trend-legend-swatch" style={{ backgroundColor: member.color }} />
-                <strong>{member.displayName}</strong>
-                <small>積み上げ内訳</small>
+            {legendOrders.map((order) => (
+              <div key={order.key} className="trend-legend-item">
+                <span className="trend-legend-swatch" style={{ backgroundColor: order.color }} />
+                <strong>{order.label}</strong>
+                <small>観察件数</small>
               </div>
             ))}
           </div>
@@ -3750,15 +3742,13 @@ function buildRankingSummaries(
     });
 }
 
-function buildMonthlyPointSeries(
-  members: Member[],
+function buildMonthlyOrderCountSeries(
   logs: ObservationLog[],
-  pointEntries: PointEntry[],
   months = 6
 ): Array<{
   label: string;
   total: number;
-  segments: Array<{ memberId: string; displayName: string; points: number; color: string }>;
+  segments: Array<{ key: string; label: string; count: number; color: string }>;
 }> {
   const colorPalette = [
     "#2f6b3f",
@@ -3770,49 +3760,62 @@ function buildMonthlyPointSeries(
     "#9c6b30",
     "#506b95"
   ];
-  const memberColors = new Map(
-    members.map((member, index) => [member.id, colorPalette[index % colorPalette.length]])
-  );
   const monthBuckets = new Map<string, Map<string, number>>();
   const current = new Date();
   const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1);
+  const includedMonthKeys: string[] = [];
 
   for (let offset = months - 1; offset >= 0; offset -= 1) {
     const monthDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - offset, 1);
     const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-    monthBuckets.set(key, new Map(members.map((member) => [member.id, 0])));
+    includedMonthKeys.push(key);
+    monthBuckets.set(key, new Map());
   }
 
   for (const log of logs) {
     const observedAt = new Date(log.observedAt);
     const key = `${observedAt.getFullYear()}-${String(observedAt.getMonth() + 1).padStart(2, "0")}`;
     const bucket = monthBuckets.get(key);
-    if (bucket && bucket.has(log.memberId)) {
-      bucket.set(log.memberId, (bucket.get(log.memberId) ?? 0) + log.points);
+    if (bucket) {
+      const orderLabel = (log.orderName ?? "").trim() || "未分類";
+      bucket.set(orderLabel, (bucket.get(orderLabel) ?? 0) + 1);
     }
   }
 
-  for (const entry of pointEntries) {
-    const awardedAt = new Date(entry.awardedAt);
-    const key = `${awardedAt.getFullYear()}-${String(awardedAt.getMonth() + 1).padStart(2, "0")}`;
-    const bucket = monthBuckets.get(key);
-    if (bucket && bucket.has(entry.memberId)) {
-      bucket.set(entry.memberId, (bucket.get(entry.memberId) ?? 0) + entry.points);
+  const orderTotals = new Map<string, number>();
+  for (const monthKey of includedMonthKeys) {
+    const bucket = monthBuckets.get(monthKey) ?? new Map<string, number>();
+    for (const [orderLabel, count] of bucket.entries()) {
+      orderTotals.set(orderLabel, (orderTotals.get(orderLabel) ?? 0) + count);
     }
   }
+
+  const orderedLabels = Array.from(orderTotals.entries())
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0], "ja-JP");
+    })
+    .map(([label]) => label);
+
+  const orderColors = new Map(
+    orderedLabels.map((label, index) => [label, colorPalette[index % colorPalette.length]])
+  );
 
   return Array.from(monthBuckets.entries()).map(([key, bucket]) => {
     const [, month] = key.split("-");
-    const segments = members.map((member) => ({
-      memberId: member.id,
-      displayName: member.displayName,
-      points: bucket.get(member.id) ?? 0,
-      color: memberColors.get(member.id) ?? colorPalette[0]
+    const segments = orderedLabels.map((label) => ({
+      key: label,
+      label: `${label}目`,
+      count: bucket.get(label) ?? 0,
+      color: orderColors.get(label) ?? colorPalette[0]
     }));
 
     return {
       label: `${Number(month)}月`,
-      total: segments.reduce((sum, segment) => sum + segment.points, 0),
+      total: segments.reduce((sum, segment) => sum + segment.count, 0),
       segments
     };
   });
