@@ -3433,7 +3433,13 @@ function MonthlyOrderTrendChart({
 
   const legendOrders = Array.from(
     new Map(data.flatMap((item) => item.segments.map((segment) => [segment.key, segment] as const))).values()
-  );
+  ).map((order) => ({
+    ...order,
+    totalCount: data.reduce(
+      (sum, item) => sum + (item.segments.find((segment) => segment.key === order.key)?.count ?? 0),
+      0
+    )
+  }));
 
   return (
     <section className="trend-card">
@@ -3485,7 +3491,7 @@ function MonthlyOrderTrendChart({
               <div key={order.key} className="trend-legend-item">
                 <span className="trend-legend-swatch" style={{ backgroundColor: order.color }} />
                 <strong>{order.label}</strong>
-                <small>観察件数</small>
+                <small>{order.totalCount}件</small>
               </div>
             ))}
           </div>
