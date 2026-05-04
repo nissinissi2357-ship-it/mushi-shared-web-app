@@ -68,7 +68,7 @@ select {
 }
 
 .hero {
-  border-radius: 32px;
+  border-radius: 8px;
   padding: 28px;
 }
 
@@ -101,7 +101,7 @@ select {
   min-width: 44px;
   height: 44px;
   padding: 0 12px;
-  border-radius: 14px;
+  border-radius: 6px;
   border: 1px solid rgba(31, 42, 31, 0.12);
   background: rgba(255, 255, 255, 0.74);
   color: var(--forest-900);
@@ -143,6 +143,21 @@ select {
 .helper-text {
   color: var(--muted);
   line-height: 1.7;
+}
+
+.classification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+
+.scientific-name {
+  font-family: "Times New Roman", Times, serif;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
 }
 
 .auth-overlay {
@@ -247,7 +262,7 @@ select {
 }
 
 .summary-card {
-  border-radius: 18px;
+  border-radius: 6px;
   padding: 16px;
 }
 
@@ -259,7 +274,7 @@ select {
 
 .trend-card {
   margin-top: 22px;
-  border-radius: 24px;
+  border-radius: 6px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
@@ -288,26 +303,11 @@ select {
   stroke-width: 2;
 }
 
-.trend-area {
-  fill: rgba(92, 163, 88, 0.16);
-}
-
-.trend-line {
-  fill: none;
-  stroke: #2f6b3f;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.trend-dot {
-  fill: #d98b2b;
-  stroke: #fff7eb;
-  stroke-width: 3;
+.trend-stack {
+  opacity: 0.96;
 }
 
 .trend-label,
-.trend-count,
 .trend-value {
   fill: var(--muted);
   font-size: 12px;
@@ -319,22 +319,29 @@ select {
   font-weight: 700;
 }
 
-.trend-count {
-  fill: #7e4500;
-}
-
 .trend-legend {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
 
 .trend-legend-item {
-  border-radius: 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+  border-radius: 4px;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
+}
+
+.trend-legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  display: inline-block;
 }
 
 .trend-legend-item span,
@@ -359,7 +366,7 @@ select {
 .primary-button,
 .secondary-button,
 .ghost-button {
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 12px 18px;
   cursor: pointer;
   transition: transform 160ms ease;
@@ -395,7 +402,7 @@ select {
 
 .panel {
   margin-top: 18px;
-  border-radius: 28px;
+  border-radius: 8px;
   padding: 22px;
 }
 
@@ -891,7 +898,7 @@ select {
 .ranking-item,
 .record-card,
 .admin-member-card {
-  border-radius: 20px;
+  border-radius: 6px;
   padding: 18px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
@@ -919,7 +926,7 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 4px;
   font-weight: 700;
 }
 
@@ -966,7 +973,7 @@ select {
   gap: 8px;
   width: 176px;
   padding: 8px;
-  border-radius: 16px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(31, 42, 31, 0.12);
 }
@@ -975,7 +982,7 @@ select {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 12px;
+  border-radius: 4px;
   display: block;
 }
 
@@ -988,7 +995,7 @@ select {
   display: inline-flex;
   align-items: center;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(31, 42, 31, 0.12);
 }
@@ -1010,7 +1017,7 @@ select:disabled {
   .hero,
   .panel,
   .session-panel.auth-panel {
-    border-radius: 24px;
+    border-radius: 8px;
     padding: 18px;
   }
 

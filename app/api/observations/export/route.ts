@@ -1,5 +1,4 @@
-import { getViewerFromSession, listExportLogs } from "@/lib/data";
-import { readSession } from "@/lib/session";
+import { getPublicActor, listExportLogs } from "@/lib/data";
 
 function escapeCsv(value: string | number | null | undefined) {
   const text = value == null ? "" : String(value);
@@ -18,7 +17,10 @@ function buildCsv(
     locationDetail?: string | null;
     latitude?: number | null;
     longitude?: number | null;
+    orderName?: string | null;
+    familyName?: string | null;
     species: string;
+    scientificName?: string | null;
     points: number;
     scoringMemo: string;
     imageUrl?: string | null;
@@ -32,7 +34,10 @@ function buildCsv(
     "詳細場所",
     "緯度",
     "経度",
+    "目名",
+    "科名",
     "種名",
+    "学名",
     "ポイント",
     "隊長メモ",
     "写真URL",
@@ -49,7 +54,10 @@ function buildCsv(
         row.locationDetail || "",
         row.latitude ?? "",
         row.longitude ?? "",
+        row.orderName || "",
+        row.familyName || "",
         row.species,
+        row.scientificName || "",
         row.points,
         row.scoringMemo || "",
         row.imageUrl || "",
@@ -69,23 +77,17 @@ function sanitizeFileNamePart(value: string) {
 
 export async function GET(request: Request) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-
-    if (!viewer) {
-      return Response.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
+    const viewer = getPublicActor();
     const url = new URL(request.url);
     const memberId = url.searchParams.get("memberId");
-    const exportLogs = await listExportLogs(viewer.member, memberId);
+    const exportLogs = await listExportLogs(viewer, memberId);
 
     const selectedMemberName =
-      memberId && (viewer.member.role === "captain" || viewer.member.role === "admin")
+      memberId && (viewer.role === "captain" || viewer.role === "admin")
         ? exportLogs[0]?.memberDisplayName || "selected"
-        : viewer.member.role === "captain" || viewer.member.role === "admin"
+        : viewer.role === "captain" || viewer.role === "admin"
           ? "all"
-          : viewer.member.displayName;
+          : viewer.displayName;
 
     const csv = buildCsv(exportLogs);
     const fileName = `mushi-observations-${sanitizeFileNamePart(selectedMemberName)}-${new Date()

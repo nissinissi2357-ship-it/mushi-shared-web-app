@@ -13,7 +13,10 @@ export const fallbackLogs: ObservationLog[] = [
     observedAt: "2026-04-19T16:57:00+09:00",
     location: "呉市焼山",
     locationDetail: "焼山中央",
+    orderName: "コウチュウ",
+    familyName: "ジョウカイボン",
     species: "セボシジョウカイ",
+    scientificName: "Lycocerus sp.",
     points: 1,
     scoringMemo: "焼山 1P"
   },
@@ -23,7 +26,10 @@ export const fallbackLogs: ObservationLog[] = [
     observedAt: "2026-04-19T17:01:00+09:00",
     location: "呉市旧呉市",
     locationDetail: "本通",
+    orderName: "カメムシ",
+    familyName: "ヨコバイ",
     species: "クワキヨコバイ",
+    scientificName: "Xestocephalus sp.",
     points: 8,
     scoringMemo: "呉市1年ぶり、旧呉市初、呉市、広島県 8P"
   },
@@ -33,9 +39,12 @@ export const fallbackLogs: ObservationLog[] = [
     observedAt: "2026-04-18T11:10:00+09:00",
     location: "東広島市",
     locationDetail: "西条町寺家",
+    orderName: "チョウ",
+    familyName: "アゲハチョウ",
     species: "アオスジアゲハ",
+    scientificName: "Graphium sarpedon",
     points: 2,
-    scoringMemo: "東広島 2P"
+    scoringMemo: "東広島市 2P"
   }
 ];
 
@@ -53,7 +62,7 @@ export const fallbackPointEntries: PointEntry[] = [
     memberId: "member-002",
     awardedAt: "2026-04-20T10:00:00+09:00",
     title: "図鑑写真の更新",
-    description: "図鑑の差し替え用写真を提供",
+    description: "図鑑用の写真が新しく採用された",
     points: 3
   }
 ];

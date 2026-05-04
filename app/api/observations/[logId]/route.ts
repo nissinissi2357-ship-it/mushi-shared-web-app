@@ -1,25 +1,21 @@
 import { NextResponse } from "next/server";
-import { deleteObservation, getViewerFromSession, updateObservation } from "@/lib/data";
+import { deleteObservation, getPublicActor, updateObservation } from "@/lib/data";
 import { isKnownLocationOption } from "@/lib/locations";
-import { readSession } from "@/lib/session";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ logId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { logId } = await context.params;
     const body = await request.json();
     const observedAt = String(body.observedAt || "").trim();
     const location = String(body.location || "").trim();
     const locationDetail = String(body.locationDetail || "").trim();
     const species = String(body.species || "").trim();
+    const orderName = String(body.orderName || "").trim();
+    const familyName = String(body.familyName || "").trim();
+    const scientificName = String(body.scientificName || "").trim();
     const scoringMemo = String(body.scoringMemo || "").trim();
     const points = Number(body.points);
     const latitude = body.latitude === null || body.latitude === undefined || body.latitude === "" ? null : Number(body.latitude);
@@ -46,11 +42,14 @@ export async function PATCH(
         locationDetail,
         latitude,
         longitude,
+        orderName,
+        familyName,
         species,
+        scientificName,
         points,
         scoringMemo
       },
-      viewer.member
+      getPublicActor()
     );
 
     return NextResponse.json({ log: updated });
@@ -67,14 +66,8 @@ export async function DELETE(
   context: { params: Promise<{ logId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { logId } = await context.params;
-    await deleteObservation(logId, viewer.member);
+    await deleteObservation(logId, getPublicActor());
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

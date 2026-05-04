@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getViewerFromSession } from "@/lib/data";
 import { normalizeLocationText, resolveKnownLocation } from "@/lib/locations";
-import { readSession } from "@/lib/session";
 
 type ReverseResult = {
   address?: Record<string, string | undefined>;
@@ -50,12 +48,6 @@ function buildLocationDetail(address: Record<string, string | undefined>, region
 
 export async function GET(request: Request) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const url = new URL(request.url);
     const latitude = Number(url.searchParams.get("lat"));
     const longitude = Number(url.searchParams.get("lon"));

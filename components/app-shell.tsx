@@ -13,6 +13,7 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
+import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
   InitialViewerState,
@@ -30,7 +31,8 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: "record", label: "観察登録" },
   { id: "logs", label: "観察ログ" },
   { id: "inquiry", label: "記録照会" },
-  { id: "points", label: "追加ポイント" }
+  { id: "points", label: "追加ポイント" },
+  { id: "members", label: "隊員管理" }
 ];
 
 type AppShellProps = {
@@ -46,7 +48,10 @@ type DraftObservation = {
   locationDetail: string;
   latitude: string;
   longitude: string;
+  orderName: string;
+  familyName: string;
   species: string;
+  scientificName: string;
   points: string;
   scoringMemo: string;
 };
@@ -93,6 +98,16 @@ type InquiryDetailRow = {
   count: number;
 };
 
+type InquiryDescendantSpeciesRow = {
+  key: string;
+  familyName: string;
+  species: string;
+  scientificName: string;
+  count: number;
+};
+
+type InquiryBrowseMode = "species" | "family" | "order";
+
 function toLocalInputValue(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
@@ -109,7 +124,10 @@ function getDefaultObservationDraft(): DraftObservation {
     locationDetail: "",
     latitude: "",
     longitude: "",
+    orderName: "",
+    familyName: "",
     species: "",
+    scientificName: "",
     points: "",
     scoringMemo: ""
   };
@@ -180,11 +198,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
+  const [memberManagerPasscode, setMemberManagerPasscode] = useState("");
+  const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
   const [inquirySearchMode, setInquirySearchMode] = useState<"and" | "or">("and");
+  const [inquiryBrowseMode, setInquiryBrowseMode] = useState<InquiryBrowseMode>("species");
+  const [inquirySearchOrder, setInquirySearchOrder] = useState("");
+  const [inquirySearchFamily, setInquirySearchFamily] = useState("");
   const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
   const [inquirySearchLocation, setInquirySearchLocation] = useState("");
   const [inquirySearchDate, setInquirySearchDate] = useState("");
@@ -201,9 +224,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
-  const currentSummary = summaries.find((summary) => summary.memberId === currentMember?.id) ?? null;
-  const canViewRanking = currentMember?.role === "captain" || currentMember?.role === "admin";
-  const isAdmin = currentMember?.role === "admin";
+  const canViewRanking = true;
   const currentYear = new Date().getFullYear();
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
@@ -255,12 +276,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     canViewRanking && pointMemberFilterId
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
-  const hasInquirySearch = Boolean(inquirySearchSpecies.trim() || inquirySearchLocation.trim() || inquirySearchDate);
+  const hasInquirySearch = Boolean(
+    inquirySearchOrder.trim() ||
+      inquirySearchFamily.trim() ||
+      inquirySearchSpecies.trim() ||
+      inquirySearchLocation.trim() ||
+      inquirySearchDate
+  );
 
   const filteredInquiryLogs = useMemo(() => {
+    const orderQuery = inquirySearchOrder.trim().toLocaleLowerCase("ja-JP");
+    const familyQuery = inquirySearchFamily.trim().toLocaleLowerCase("ja-JP");
     const speciesQuery = inquirySearchSpecies.trim().toLocaleLowerCase("ja-JP");
     const locationQuery = inquirySearchLocation.trim().toLocaleLowerCase("ja-JP");
     const activeChecks = [
+      orderQuery
+        ? (log: InquiryObservation) => (log.orderName ?? "").toLocaleLowerCase("ja-JP").includes(orderQuery)
+        : null,
+      familyQuery
+        ? (log: InquiryObservation) => (log.familyName ?? "").toLocaleLowerCase("ja-JP").includes(familyQuery)
+        : null,
       speciesQuery
         ? (log: InquiryObservation) => log.species.toLocaleLowerCase("ja-JP").includes(speciesQuery)
         : null,
@@ -278,26 +313,53 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return inquiryLogs.filter((log) =>
       inquirySearchMode === "and" ? activeChecks.every((check) => check(log)) : activeChecks.some((check) => check(log))
     );
-  }, [inquiryLogs, inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+  }, [
+    inquiryLogs,
+    inquirySearchDate,
+    inquirySearchFamily,
+    inquirySearchLocation,
+    inquirySearchMode,
+    inquirySearchOrder,
+    inquirySearchSpecies
+  ]);
 
-  const inquirySpeciesList = useMemo(
-    () =>
-      [...new Set(filteredInquiryLogs.map((log) => log.species))]
-        .filter(Boolean)
-        .sort((left, right) => left.localeCompare(right, "ja-JP")),
-    [filteredInquiryLogs]
-  );
+  const inquiryItemList = useMemo(() => {
+    const values = filteredInquiryLogs.map((log) => {
+      if (inquiryBrowseMode === "order") {
+        return log.orderName ?? "";
+      }
+
+      if (inquiryBrowseMode === "family") {
+        return log.familyName ?? "";
+      }
+
+      return log.species;
+    });
+
+    return [...new Set(values)].filter(Boolean).sort((left, right) => left.localeCompare(right, "ja-JP"));
+  }, [filteredInquiryLogs, inquiryBrowseMode]);
 
   const inquirySpeciesPageSize = 10;
-  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquirySpeciesList.length / inquirySpeciesPageSize));
-  const paginatedInquirySpecies = inquirySpeciesList.slice(
+  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquiryItemList.length / inquirySpeciesPageSize));
+  const paginatedInquirySpecies = inquiryItemList.slice(
     (inquirySpeciesPage - 1) * inquirySpeciesPageSize,
     inquirySpeciesPage * inquirySpeciesPageSize
   );
 
   const selectedInquirySpeciesLogs = useMemo(
-    () => filteredInquiryLogs.filter((log) => log.species === selectedInquirySpecies),
-    [filteredInquiryLogs, selectedInquirySpecies]
+    () =>
+      filteredInquiryLogs.filter((log) => {
+        if (inquiryBrowseMode === "order") {
+          return (log.orderName ?? "") === selectedInquirySpecies;
+        }
+
+        if (inquiryBrowseMode === "family") {
+          return (log.familyName ?? "") === selectedInquirySpecies;
+        }
+
+        return log.species === selectedInquirySpecies;
+      }),
+    [filteredInquiryLogs, inquiryBrowseMode, selectedInquirySpecies]
   );
 
   const inquiryYearOptions = useMemo(
@@ -316,6 +378,35 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     [selectedInquirySpeciesLogs, selectedInquiryYear]
   );
 
+  const selectedInquiryClassification = useMemo(() => {
+    const firstLog = selectedInquirySpeciesLogs[0];
+    if (!firstLog) {
+      return null;
+    }
+
+    if (inquiryBrowseMode === "order") {
+      return {
+        orderName: selectedInquirySpecies,
+        familyName: "",
+        scientificName: ""
+      };
+    }
+
+    if (inquiryBrowseMode === "family") {
+      return {
+        orderName: firstLog.orderName ?? "",
+        familyName: selectedInquirySpecies,
+        scientificName: ""
+      };
+    }
+
+    return {
+      orderName: firstLog.orderName ?? "",
+      familyName: firstLog.familyName ?? "",
+      scientificName: firstLog.scientificName ?? ""
+    };
+  }, [inquiryBrowseMode, selectedInquirySpecies, selectedInquirySpeciesLogs]);
+
   const inquiryLocationRows = useMemo(
     () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
     [isInquiryKureExpanded, selectedInquiryYearLogs]
@@ -329,15 +420,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     () => buildInquiryDetailRows(selectedInquiryYearLogs),
     [selectedInquiryYearLogs]
   );
-  const summaryYear = new Date().getFullYear();
-
-  const monthlyPointSeries = useMemo(() => {
-    if (!currentMember) {
-      return [];
-    }
-
-    return buildMonthlyPointSeries(logs, pointEntries, currentMember.id);
-  }, [currentMember, logs, pointEntries]);
+  const inquiryDescendantSpeciesRows = useMemo(
+    () => buildInquiryDescendantSpeciesRows(selectedInquiryYearLogs, inquiryBrowseMode),
+    [inquiryBrowseMode, selectedInquiryYearLogs]
+  );
+  const monthlyOrderCountSeries = useMemo(() => buildMonthlyOrderCountSeries(logs), [logs]);
 
   const rankingPeriodOptions = useMemo(
     () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
@@ -353,13 +440,17 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     rankingPeriodOptions.find((option) => option.value === rankingPeriod)?.label ?? "今月ランキング";
 
   useEffect(() => {
-    if (currentMember && !editingPointEntryId) {
+    if (selectedMemberId && !editingPointEntryId) {
       setPointDraft((current) => ({
         ...current,
-        memberId: current.memberId || currentMember.id
+        memberId: current.memberId || selectedMemberId
       }));
     }
-  }, [currentMember, editingPointEntryId]);
+  }, [editingPointEntryId, selectedMemberId]);
+
+  useEffect(() => {
+    setCurrentMember(selectedMember ?? initialViewer?.member ?? members[0] ?? null);
+  }, [initialViewer?.member, members, selectedMember]);
 
   useEffect(() => {
     setLogsPage(1);
@@ -376,8 +467,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }, [rankingPeriod, rankingPeriodOptions]);
 
   useEffect(() => {
-    setSelectedInquirySpecies((current) => (current && inquirySpeciesList.includes(current) ? current : ""));
-  }, [inquirySpeciesList]);
+    setSelectedInquirySpecies((current) => (current && inquiryItemList.includes(current) ? current : ""));
+  }, [inquiryItemList]);
 
   useEffect(() => {
     setSelectedInquiryYear((current) =>
@@ -391,18 +482,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   useEffect(() => {
     setInquirySpeciesPage(1);
-  }, [inquirySearchDate, inquirySearchLocation, inquirySearchMode, inquirySearchSpecies]);
+  }, [
+    inquiryBrowseMode,
+    inquirySearchDate,
+    inquirySearchFamily,
+    inquirySearchLocation,
+    inquirySearchMode,
+    inquirySearchOrder,
+    inquirySearchSpecies
+  ]);
 
   useEffect(() => {
     setInquirySpeciesPage((current) => Math.min(current, totalInquirySpeciesPages));
   }, [totalInquirySpeciesPages]);
 
   useEffect(() => {
-    if (!currentMember) {
-      setInquiryLogs([]);
-      return;
-    }
-
     if (activeTab !== "inquiry") {
       return;
     }
@@ -425,7 +519,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return () => {
       cancelled = true;
     };
-  }, [activeTab, currentMember]);
+  }, [activeTab]);
 
   function applyMembers(nextMembers: Member[]) {
     setMembers(nextMembers);
@@ -442,23 +536,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function applyViewerPayload(payload: LoginResult) {
-    setCurrentMember(payload.member);
-    setSelectedMemberId(payload.member.id);
+    setCurrentMember(selectedMember ?? payload.member);
+    setSelectedMemberId((current) =>
+      members.some((member) => member.id === current) ? current : payload.member.id
+    );
     setLogs(payload.logs);
     setPointEntries(payload.pointEntries);
     setSummaries(payload.summaries);
-    setAccountDisplayName(payload.member.displayName);
+    setAccountDisplayName((selectedMember ?? payload.member).displayName);
     setAccountPasscode("");
     setPointDraft((current) => ({
       ...current,
-      memberId:
-        canViewRanking && pointMemberFilterId ? pointMemberFilterId : current.memberId || payload.member.id
+      memberId: current.memberId || selectedMemberId || payload.member.id
     }));
-
-    if (!(payload.member.role === "captain" || payload.member.role === "admin")) {
-      setLogMemberFilterId(null);
-      setPointMemberFilterId(null);
-    }
   }
 
   async function refreshMembers() {
@@ -519,6 +609,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     await Promise.all([refreshMembers(), refreshViewerState()]);
   }
 
+  function mergeSpeciesClassification(
+    speciesName: string,
+    current: Pick<DraftObservation, "orderName" | "familyName" | "scientificName">
+  ) {
+    const classification = lookupSpeciesClassification(speciesName);
+
+    return {
+      orderName: classification.orderName || current.orderName,
+      familyName: classification.familyName || current.familyName,
+      scientificName: classification.scientificName || current.scientificName
+    };
+  }
+
   function revealSavedLog(payload: LoginResult, log: ObservationLog) {
     setIsLogSearchOpen(false);
     setLogSearchMode("and");
@@ -527,14 +630,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setLogSearchDate("");
     setHighlightedLogId(log.id);
 
-    const shouldFilterToMember = payload.member.role === "captain" || payload.member.role === "admin";
-    const targetLogs = shouldFilterToMember
-      ? payload.logs.filter((entry) => entry.memberId === log.memberId)
-      : payload.logs;
-
-    if (shouldFilterToMember) {
-      setLogMemberFilterId(log.memberId);
-    }
+    const targetLogs = payload.logs.filter((entry) => entry.memberId === log.memberId);
+    setLogMemberFilterId(log.memberId);
 
     const logIndex = targetLogs.findIndex((entry) => entry.id === log.id);
     const nextPage = logIndex >= 0 ? Math.floor(logIndex / logPageSize) + 1 : 1;
@@ -543,11 +640,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleExportLogs() {
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
-      return;
-    }
-
     setIsExporting(true);
     setStatusMessage(null);
 
@@ -638,6 +730,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function applyParsedToDraft(rawText: string) {
     const parsed = parseCaptainMessage(rawText);
+    const mergedClassification = mergeSpeciesClassification(parsed.species || "", draft);
 
     setDraft((current) => ({
       observedAt: parsed.observedAt || current.observedAt,
@@ -645,7 +738,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: current.locationDetail,
       latitude: current.latitude,
       longitude: current.longitude,
+      orderName: mergedClassification.orderName,
+      familyName: mergedClassification.familyName,
       species: parsed.species || current.species,
+      scientificName: mergedClassification.scientificName,
       points: parsed.points !== null ? String(parsed.points) : current.points,
       scoringMemo: parsed.scoringMemo || current.scoringMemo
     }));
@@ -794,6 +890,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleAdminCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -803,7 +904,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(adminCreateDraft)
+        body: JSON.stringify({
+          ...adminCreateDraft,
+          adminPasscode: memberManagerPasscode
+        })
       });
 
       const payload = (await response.json()) as { member?: Member; error?: string };
@@ -822,6 +926,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminRoleUpdate(memberId: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -832,6 +941,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          adminPasscode: memberManagerPasscode,
           action: "update-role",
           role: adminRoleDrafts[memberId]
         })
@@ -852,6 +962,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminResetPasscode(memberId: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     setIsAdminSaving(true);
     setStatusMessage(null);
 
@@ -862,6 +977,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          adminPasscode: memberManagerPasscode,
           action: "reset-passcode"
         })
       });
@@ -872,7 +988,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       }
 
       await refreshEverything();
-      setStatusMessage("合言葉を 0000 にリセットしました。");
+      setStatusMessage("合言葉を初期化しました。");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "合言葉のリセットに失敗しました。");
     } finally {
@@ -881,6 +997,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminDelete(memberId: string, displayName: string) {
+    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
+      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+      return;
+    }
+
     const confirmed = window.confirm(`${displayName} さんのアカウントを削除しますか？`);
     if (!confirmed) {
       return;
@@ -891,7 +1012,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       const response = await fetch(`/api/admin/members/${memberId}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          adminPasscode: memberManagerPasscode
+        })
       });
 
       const payload = (await response.json()) as { error?: string };
@@ -915,12 +1042,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        memberId: selectedMemberId,
         observedAt: new Date(nextDraft.observedAt).toISOString(),
         location: nextDraft.location,
         locationDetail: nextDraft.locationDetail,
         latitude: nextDraft.latitude ? Number(nextDraft.latitude) : null,
         longitude: nextDraft.longitude ? Number(nextDraft.longitude) : null,
+        orderName: nextDraft.orderName,
+        familyName: nextDraft.familyName,
         species: nextDraft.species,
+        scientificName: nextDraft.scientificName,
         points: Number(nextDraft.points),
         scoringMemo: nextDraft.scoringMemo
       })
@@ -941,8 +1072,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -959,8 +1090,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleQuickRegister() {
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -977,7 +1108,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: draft.locationDetail,
       latitude: draft.latitude,
       longitude: draft.longitude,
+      orderName: mergeSpeciesClassification(parsed.species || draft.species, draft).orderName,
+      familyName: mergeSpeciesClassification(parsed.species || draft.species, draft).familyName,
       species: parsed.species || draft.species,
+      scientificName: mergeSpeciesClassification(parsed.species || draft.species, draft).scientificName,
       points: parsed.points !== null ? String(parsed.points) : draft.points,
       scoringMemo: parsed.scoringMemo || draft.scoringMemo
     };
@@ -1014,7 +1148,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       locationDetail: log.locationDetail || "",
       latitude: log.latitude === null || log.latitude === undefined ? "" : String(log.latitude),
       longitude: log.longitude === null || log.longitude === undefined ? "" : String(log.longitude),
+      orderName: log.orderName || "",
+      familyName: log.familyName || "",
       species: log.species,
+      scientificName: log.scientificName || "",
       points: String(log.points),
       scoringMemo: log.scoringMemo
     });
@@ -1036,7 +1173,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             locationDetail: editingLogDraft.locationDetail,
             latitude: editingLogDraft.latitude ? Number(editingLogDraft.latitude) : null,
             longitude: editingLogDraft.longitude ? Number(editingLogDraft.longitude) : null,
+            orderName: editingLogDraft.orderName,
+            familyName: editingLogDraft.familyName,
             species: editingLogDraft.species,
+            scientificName: editingLogDraft.scientificName,
             points: Number(editingLogDraft.points),
             scoringMemo: editingLogDraft.scoringMemo
         })
@@ -1102,13 +1242,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function resetPointDraft() {
     setEditingPointEntryId(null);
-    setPointDraft(getDefaultPointEntryDraft(currentMember?.id ?? members[0]?.id ?? ""));
+    setPointDraft(getDefaultPointEntryDraft(selectedMemberId || (members[0]?.id ?? "")));
   }
 
   async function handlePointSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!currentMember) {
-      setStatusMessage("先にログインしてください。");
+    if (!pointDraft.memberId && !selectedMemberId) {
+      setStatusMessage("先に隊員を選んでください。");
       return;
     }
 
@@ -1124,7 +1264,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            memberId: pointDraft.memberId || currentMember.id,
+            memberId: pointDraft.memberId || selectedMemberId,
             awardedAt: new Date(pointDraft.awardedAt).toISOString(),
             title: pointDraft.title,
             description: pointDraft.description,
@@ -1181,11 +1321,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   function canManageMemberData(memberId: string) {
-    if (!currentMember) {
-      return false;
+    return Boolean(memberId);
+  }
+
+  function handleUnlockMemberManager(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (memberManagerPasscode.trim() !== "0000") {
+      setIsMemberManagerUnlocked(false);
+      setStatusMessage("隊員管理のパスワードが違います。");
+      return;
     }
 
-    return currentMember.role === "captain" || currentMember.role === "admin" || currentMember.id === memberId;
+    setIsMemberManagerUnlocked(true);
+    setStatusMessage("隊員管理を開きました。");
   }
 
   return (
@@ -1198,50 +1347,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           </div>
 
           <div className="hero-menu">
-            {currentMember ? <p className="hero-member">{currentMember.displayName}</p> : null}
-            {currentMember ? (
-              <button
-                type="button"
-                className="menu-button"
-                aria-label={`${currentMember.displayName} のアカウントメニュー`}
-                onClick={() => setIsAuthPanelOpen(true)}
-              >
-                ...
-              </button>
-            ) : (
-              <button type="button" className="secondary-button" onClick={() => setIsAuthPanelOpen(true)}>
-                ログイン
-              </button>
-            )}
+            {selectedMember ? <p className="hero-member">入力対象: {selectedMember.displayName}</p> : null}
           </div>
         </div>
 
         {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
-
-        {currentMember && currentSummary ? (
-          <div className="hero-stats">
-            <StatCard label="合計ポイント" value={`${currentSummary.totalPoints}P`} />
-            <StatCard label="観察ポイント" value={`${currentSummary.observationPoints}P`} />
-            <StatCard label="追加ポイント" value={`${currentSummary.extraPoints}P`} />
-            <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
-          </div>
-        ) : null}
       </header>
-
-      {loginWarningMessage ? (
-        <div className="alert-overlay" onClick={() => setLoginWarningMessage(null)}>
-          <section className="alert-panel" onClick={(event) => event.stopPropagation()}>
-            <p className="section-label">Warning</p>
-            <h2>ログインできません</h2>
-            <p>{loginWarningMessage}</p>
-            <div className="inline-actions">
-              <button type="button" className="primary-button" onClick={() => setLoginWarningMessage(null)}>
-                閉じる
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
 
       {selectedInquirySpecies ? (
         <div className="alert-overlay" onClick={() => setSelectedInquirySpecies("")}>
@@ -1249,7 +1360,22 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <div className="inquiry-panel-head">
               <div>
                 <p className="section-label">Profile</p>
-                <h2>{selectedInquirySpecies}</h2>
+                <h2>
+                  {selectedInquirySpecies}
+                  {inquiryBrowseMode === "species" && selectedInquiryClassification?.scientificName ? (
+                    <>
+                      {" "}
+                      <span className="scientific-name">({selectedInquiryClassification.scientificName})</span>
+                    </>
+                  ) : null}
+                </h2>
+                {selectedInquiryClassification ? (
+                  <ClassificationMeta
+                    orderName={selectedInquiryClassification.orderName}
+                    familyName={selectedInquiryClassification.familyName}
+                    className="helper-text"
+                  />
+                ) : null}
               </div>
 
               <div className="inline-actions">
@@ -1331,6 +1457,55 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </table>
             </div>
 
+            {inquiryBrowseMode !== "species" ? (
+              <section className="inquiry-detail-block">
+                <div className="inquiry-panel-head">
+                  <div>
+                    <p className="section-label">Species</p>
+                    <h4>下位の種一覧</h4>
+                  </div>
+                  <p className="helper-text">
+                    {inquiryBrowseMode === "order"
+                      ? "この目に含まれる報告種を、科ごとに一覧できます。"
+                      : "この科に含まれる報告種を一覧できます。"}
+                  </p>
+                </div>
+
+                {inquiryDescendantSpeciesRows.length === 0 ? (
+                  <p className="helper-text">この年の下位種記録はありません。</p>
+                ) : (
+                  <div className="table-scroll">
+                    <table className="inquiry-table inquiry-detail-table">
+                      <thead>
+                        <tr>
+                          {inquiryBrowseMode === "order" ? <th>科名</th> : null}
+                          <th>種名</th>
+                          <th>件数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inquiryDescendantSpeciesRows.map((row) => (
+                          <tr key={row.key}>
+                            {inquiryBrowseMode === "order" ? <td>{row.familyName ? `${row.familyName}科` : "—"}</td> : null}
+                            <td>
+                              <strong>{row.species}</strong>
+                              {row.scientificName ? (
+                                <>
+                                  {" "}
+                                  <span className="scientific-name">({row.scientificName})</span>
+                                </>
+                              ) : null}
+                            </td>
+                            <td>{row.count}件</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            ) : null}
+
             <section className="inquiry-detail-block">
               <div className="inquiry-panel-head">
                 <div>
@@ -1371,277 +1546,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         </div>
       ) : null}
 
-      {isAuthPanelOpen ? (
-        <div className="auth-overlay" onClick={() => setIsAuthPanelOpen(false)}>
-          <section className="session-panel auth-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="auth-panel-head">
-              <div>
-                <p className="section-label">Account</p>
-                <h2>{currentMember ? "アカウント設定" : "ログイン"}</h2>
-              </div>
-              <div className="auth-panel-actions">
-                {currentMember ? (
-                  <button type="button" className="ghost-button" onClick={handleLogout}>
-                    ログアウト
-                  </button>
-                ) : null}
-                <button type="button" className="ghost-button" onClick={() => setIsAuthPanelOpen(false)}>
-                  閉じる
-                </button>
-              </div>
-            </div>
-
-            <section className="auth-section">
-              <p className="section-label">Login</p>
-              <div className="session-grid">
-                <label>
-                  ログインする隊員
-                  <select
-                    value={selectedMemberId}
-                    onChange={(event) => setSelectedMemberId(event.target.value)}
-                    disabled={members.length === 0}
-                  >
-                    {members.length === 0 ? <option value="">隊員がまだいません</option> : null}
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.displayName} ({member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  合言葉
-                  <input
-                    type="password"
-                    placeholder="4文字以上"
-                    value={loginPasscode}
-                    onChange={(event) => setLoginPasscode(event.target.value)}
-                  />
-                </label>
-
-                <div className="session-actions">
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={handleLogin}
-                    disabled={isLoggingIn || !selectedMember}
-                  >
-                    {isLoggingIn ? "ログイン中..." : "ログイン"}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            {!currentMember ? (
-              <section className="auth-section">
-                <p className="section-label">Join</p>
-                <div className="inline-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setIsRegisterPanelOpen((current) => !current)}
-                  >
-                    {isRegisterPanelOpen ? "新規作成を閉じる" : "新しいアカウントを作成する"}
-                  </button>
-                </div>
-
-                {isRegisterPanelOpen ? (
-                  <form className="registration-box" onSubmit={handleRegister}>
-                    <label>
-                      新しい隊員名
-                      <input
-                        type="text"
-                        placeholder="例: たろう"
-                        value={registerDraft.displayName}
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({ ...current, displayName: event.target.value }))
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      合言葉
-                      <input
-                        type="password"
-                        placeholder="4文字以上"
-                        value={registerDraft.passcode}
-                        onChange={(event) =>
-                          setRegisterDraft((current) => ({ ...current, passcode: event.target.value }))
-                        }
-                      />
-                    </label>
-
-                    <div className="session-actions">
-                      <button type="submit" className="secondary-button" disabled={isRegistering}>
-                        {isRegistering ? "登録中..." : "隊員を追加"}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
-              </section>
-            ) : null}
-
-            {currentMember ? (
-              <section className="auth-section">
-                <p className="section-label">My Account</p>
-                <div className="inline-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => setIsAccountSettingsOpen((current) => !current)}
-                  >
-                    {isAccountSettingsOpen ? "アカウント設定を閉じる" : "アカウント設定"}
-                  </button>
-                </div>
-
-                {isAccountSettingsOpen ? (
-                  <form className="account-form" onSubmit={handleAccountUpdate}>
-                    <label>
-                      アカウント名
-                      <input
-                        type="text"
-                        value={accountDisplayName}
-                        onChange={(event) => setAccountDisplayName(event.target.value)}
-                      />
-                    </label>
-
-                    <label>
-                      新しい合言葉
-                      <input
-                        type="password"
-                        placeholder="変更しないなら空欄"
-                        value={accountPasscode}
-                        onChange={(event) => setAccountPasscode(event.target.value)}
-                      />
-                    </label>
-
-                    <div className="session-actions">
-                      <button type="submit" className="secondary-button" disabled={isAccountSaving}>
-                        {isAccountSaving ? "更新中..." : "アカウント名と合言葉を更新"}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
-              </section>
-            ) : null}
-
-            {isAdmin ? (
-              <section className="auth-section admin-section">
-                <p className="section-label">Admin</p>
-
-                <form className="admin-create-form" onSubmit={handleAdminCreate}>
-                  <label>
-                    新規アカウント名
-                    <input
-                      type="text"
-                      value={adminCreateDraft.displayName}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({ ...current, displayName: event.target.value }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    初期合言葉
-                    <input
-                      type="password"
-                      value={adminCreateDraft.passcode}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({ ...current, passcode: event.target.value }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    権限
-                    <select
-                      value={adminCreateDraft.role}
-                      onChange={(event) =>
-                        setAdminCreateDraft((current) => ({
-                          ...current,
-                          role: event.target.value as MemberRole
-                        }))
-                      }
-                    >
-                      <option value="member">隊員</option>
-                      <option value="captain">隊長</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </label>
-
-                  <div className="session-actions">
-                    <button type="submit" className="primary-button" disabled={isAdminSaving}>
-                      {isAdminSaving ? "作成中..." : "アカウントを作成"}
-                    </button>
-                  </div>
-                </form>
-
-                <div className="admin-member-list">
-                  {members.map((member) => (
-                    <article key={member.id} className="admin-member-card">
-                      <div>
-                        <p className="ranking-name">{member.displayName}</p>
-                        <p className="ranking-meta">{member.id === currentMember.id ? "現在ログイン中" : "管理対象"}</p>
-                      </div>
-
-                      <label>
-                        権限
-                        <select
-                          value={adminRoleDrafts[member.id] ?? member.role}
-                          onChange={(event) =>
-                            setAdminRoleDrafts((current) => ({
-                              ...current,
-                              [member.id]: event.target.value as MemberRole
-                            }))
-                          }
-                          disabled={member.id === currentMember.id}
-                        >
-                          <option value="member">隊員</option>
-                          <option value="captain">隊長</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </label>
-
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleAdminRoleUpdate(member.id)}
-                          disabled={isAdminSaving || member.id === currentMember.id}
-                        >
-                          権限を更新
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleAdminResetPasscode(member.id)}
-                          disabled={isAdminSaving}
-                        >
-                          合言葉を0000に
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => handleAdminDelete(member.id, member.displayName)}
-                          disabled={isAdminSaving || member.id === currentMember.id}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            <p className="helper-text">データソース: {source === "supabase" ? "Supabase" : "フォールバック表示"}</p>
-          </section>
-        </div>
-      ) : null}
-
-      {currentMember ? (
-        <>
+      <>
           <nav className="tab-bar" aria-label="画面切り替え">
             {tabs.map((tab) => (
               <button
@@ -1664,69 +1569,54 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </div>
               </div>
 
-              {currentSummary ? (
-                <div className="hero-stats">
-                  <StatCard label={`${currentYear}年の合計`} value={`${currentSummary.totalPoints}P`} />
-                  <StatCard label="通算ポイント" value={`${currentSummary.lifetimeTotalPoints}P`} />
-                  <StatCard label="観察件数" value={`${currentSummary.recordCount}件`} />
-                </div>
-              ) : null}
-
               <div className="home-copy">
-                <p>合計ポイントは今年1月からの集計です。年が変わると、今年のポイントは0から始まります。</p>
-                <p>通算ポイントでは、これまでの累計ポイントも確認できます。</p>
-                <p>ランキングは隊長と Admin だけが見られます。</p>
+                <p>今年のランキングを中心に見られるホーム画面です。年が変わると、その年のポイントで新しく集計されます。</p>
+                <p>下のグラフでは、直近6か月の観察件数を目ごとの積み上げで確認できます。</p>
               </div>
 
-              <MonthlyTrendChart data={monthlyPointSeries} />
+              <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
 
-              {canViewRanking ? (
-                <>
-                  <div className="panel-head ranking-head">
-                    <div>
-                      <p className="section-label">Ranking</p>
-                      <h3>{selectedRankingPeriodLabel}</h3>
-                    </div>
+              <div className="panel-head ranking-head">
+                <div>
+                  <p className="section-label">Ranking</p>
+                  <h3>{selectedRankingPeriodLabel}</h3>
+                </div>
 
-                    <label>
-                      期間
-                      <select value={rankingPeriod} onChange={(event) => setRankingPeriod(event.target.value)}>
-                        {rankingPeriodOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="ranking-list">
-                    {rankingSummaries.map((summary, index) => (
-                      <article
-                        key={`${rankingPeriod}-${summary.memberId}`}
-                        className="ranking-item"
-                        onClick={() => {
-                          setLogMemberFilterId(summary.memberId);
-                          setActiveTab("logs");
-                        }}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <span className="ranking-rank">{index + 1}</span>
-                        <div>
-                          <p className="ranking-name">{summary.displayName}</p>
-                          <p className="ranking-meta">
-                            {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
-                            {summary.recordCount}件
-                          </p>
-                        </div>
-                        <div className="ranking-points">{summary.totalPoints}P</div>
-                      </article>
+                <label>
+                  期間
+                  <select value={rankingPeriod} onChange={(event) => setRankingPeriod(event.target.value)}>
+                    {rankingPeriodOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
-                  </div>
-                </>
-              ) : (
-                <p className="helper-text">ランキングは隊長またはAdminだけが見られます。</p>
-              )}
+                  </select>
+                </label>
+              </div>
+
+              <div className="ranking-list">
+                {rankingSummaries.map((summary, index) => (
+                  <article
+                    key={`${rankingPeriod}-${summary.memberId}`}
+                    className="ranking-item"
+                    onClick={() => {
+                      setLogMemberFilterId(summary.memberId);
+                      setActiveTab("logs");
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="ranking-rank">{index + 1}</span>
+                    <div>
+                      <p className="ranking-name">{summary.displayName}</p>
+                      <p className="ranking-meta">
+                        {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
+                        {summary.recordCount}件
+                      </p>
+                    </div>
+                    <div className="ranking-points">{summary.totalPoints}P</div>
+                  </article>
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -1740,6 +1630,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
 
               <form className="record-form" onSubmit={handleSubmit}>
+                <label>
+                  隊員
+                  <select
+                    value={selectedMemberId}
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    required
+                  >
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label className="full-width">
                   LINE貼り付け
                   <textarea
@@ -1837,8 +1742,47 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     type="text"
                     placeholder="例: セボシジョウカイ"
                     value={draft.species}
-                    onChange={(event) => setDraft((current) => ({ ...current, species: event.target.value }))}
+                    onChange={(event) =>
+                      setDraft((current) => {
+                        const species = event.target.value;
+                        return {
+                          ...current,
+                          ...mergeSpeciesClassification(species, current),
+                          species
+                        };
+                      })
+                    }
                     required
+                  />
+                </label>
+
+                <label>
+                  目
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.orderName}
+                    onChange={(event) => setDraft((current) => ({ ...current, orderName: event.target.value }))}
+                  />
+                </label>
+
+                <label>
+                  科
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.familyName}
+                    onChange={(event) => setDraft((current) => ({ ...current, familyName: event.target.value }))}
+                  />
+                </label>
+
+                <label className="full-width">
+                  学名
+                  <input
+                    type="text"
+                    placeholder="一覧にない場合は手入力"
+                    value={draft.scientificName}
+                    onChange={(event) => setDraft((current) => ({ ...current, scientificName: event.target.value }))}
                   />
                 </label>
 
@@ -2155,7 +2099,44 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               type="text"
                               value={editingLogDraft.species}
                               onChange={(event) =>
-                                setEditingLogDraft((current) => ({ ...current, species: event.target.value }))
+                                setEditingLogDraft((current) => {
+                                  const species = event.target.value;
+                                  return {
+                                    ...current,
+                                    ...mergeSpeciesClassification(species, current),
+                                    species
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            目
+                            <input
+                              type="text"
+                              value={editingLogDraft.orderName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, orderName: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label>
+                            科
+                            <input
+                              type="text"
+                              value={editingLogDraft.familyName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, familyName: event.target.value }))
+                              }
+                            />
+                          </label>
+                          <label className="full-width">
+                            学名
+                            <input
+                              type="text"
+                              value={editingLogDraft.scientificName}
+                              onChange={(event) =>
+                                setEditingLogDraft((current) => ({ ...current, scientificName: event.target.value }))
                               }
                             />
                           </label>
@@ -2198,7 +2179,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <div>
                               <p className="record-meta">{formatDateTime(log.observedAt)}</p>
                               {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
-                              <h3 className="record-species">{log.species}</h3>
+                              <ClassificationMeta
+                                orderName={log.orderName}
+                                familyName={log.familyName}
+                              />
+                              <h3 className="record-species">
+                                <span>{log.species}</span>
+                                {log.scientificName ? (
+                                  <>
+                                    {" "}
+                                    <span className="scientific-name">{log.scientificName}</span>
+                                  </>
+                                ) : null}
+                              </h3>
                             </div>
                             <div className="record-top-actions">
                               <div className="point-badge">{log.points}P</div>
@@ -2300,10 +2293,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <div>
                   <p className="section-label">Inquiry</p>
                   <h2>記録照会</h2>
-                  <p className="helper-text">全隊員の観察記録から、種類ごとの出現状況を年ごとに確認できます。</p>
+                  <p className="helper-text">全隊員の観察記録から、目・科・種名ごとの出現状況を年ごとに確認できます。</p>
                 </div>
 
                 <div className="toolbar-row">
+                  <label>
+                    表示単位
+                    <select
+                      value={inquiryBrowseMode}
+                      onChange={(event) => setInquiryBrowseMode(event.target.value as InquiryBrowseMode)}
+                    >
+                      <option value="species">種名</option>
+                      <option value="family">科名</option>
+                      <option value="order">目名</option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     className="secondary-button"
@@ -2336,6 +2340,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     </div>
 
                     <div className="search-grid">
+                      <label>
+                        目
+                        <input
+                          type="text"
+                          placeholder="例: コウチュウ"
+                          value={inquirySearchOrder}
+                          onChange={(event) => setInquirySearchOrder(event.target.value)}
+                        />
+                      </label>
+
+                      <label>
+                        科
+                        <input
+                          type="text"
+                          placeholder="例: ハネカクシ"
+                          value={inquirySearchFamily}
+                          onChange={(event) => setInquirySearchFamily(event.target.value)}
+                        />
+                      </label>
+
                       <label>
                         種名
                         <input
@@ -2371,6 +2395,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                         type="button"
                         className="ghost-button"
                         onClick={() => {
+                          setInquirySearchOrder("");
+                          setInquirySearchFamily("");
                           setInquirySearchSpecies("");
                           setInquirySearchLocation("");
                           setInquirySearchDate("");
@@ -2389,24 +2415,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               {!isInquiryLoading ? (
                 <p className="helper-text">
-                  {filteredInquiryLogs.length}件の記録から、{inquirySpeciesList.length}種類を表示しています。
+                  {filteredInquiryLogs.length}件の記録から、{inquiryItemList.length}
+                  {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示しています。
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquirySpeciesList.length === 0 ? (
+              {!isInquiryLoading && inquiryItemList.length === 0 ? (
                 <p className="helper-text">
                   {hasInquirySearch ? "検索条件に合う記録はありません。" : "照会できる観察記録がまだありません。"}
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquirySpeciesList.length > 0 ? (
+              {!isInquiryLoading && inquiryItemList.length > 0 ? (
                 <section className="inquiry-species-panel">
                   <div className="inquiry-panel-head">
                     <div>
-                      <p className="section-label">Species</p>
-                      <h3>種類一覧</h3>
+                      <p className="section-label">List</p>
+                      <h3>{inquiryBrowseMode === "species" ? "種類一覧" : inquiryBrowseMode === "family" ? "科一覧" : "目一覧"}</h3>
                     </div>
-                    <p className="helper-text">50音順に並んでいます。種類名を押すと詳細が開きます。</p>
+                    <p className="helper-text">
+                      50音順に並んでいます。{inquiryBrowseMode === "species" ? "種名" : inquiryBrowseMode === "family" ? "科名" : "目名"}を押すと詳細が開きます。
+                    </p>
                   </div>
 
                   <div className="inquiry-species-rows">
@@ -2425,8 +2454,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                   <div className="pagination-bar pagination-bar-bottom">
                     <p className="helper-text">
-                      {inquirySpeciesList.length}種類中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
-                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquirySpeciesList.length)}種類を表示
+                      {inquiryItemList.length}
+                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
+                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquiryItemList.length)}
+                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示
                     </p>
                     <div className="pagination-actions logs-pagination-actions">
                       <button
@@ -2496,11 +2527,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <label>
                   対象隊員
                   <select
-                    value={pointDraft.memberId || currentMember.id}
+                    value={pointDraft.memberId || selectedMemberId || members[0]?.id || ""}
                     onChange={(event) => setPointDraft((current) => ({ ...current, memberId: event.target.value }))}
-                    disabled={!canViewRanking}
                   >
-                    {(canViewRanking ? members : [currentMember]).map((member) => (
+                    {members.map((member) => (
                       <option key={member.id} value={member.id}>
                         {member.displayName}
                       </option>
@@ -2607,20 +2637,167 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
             </section>
           ) : null}
-        </>
-      ) : (
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="section-label">Start</p>
-              <h2>ログインしてください</h2>
-            </div>
-          </div>
-          <p className="helper-text">
-            右上のログインボタンから入ると、ホーム・観察登録・観察ログ・記録照会・追加ポイントが使えるようになります。
-          </p>
-        </section>
-      )}
+
+          {activeTab === "members" ? (
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <p className="section-label">Members</p>
+                  <h2>隊員管理</h2>
+                  <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の初期化、削除ができます。</p>
+                </div>
+
+                {isMemberManagerUnlocked ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => {
+                      setIsMemberManagerUnlocked(false);
+                      setStatusMessage("隊員管理を閉じました。");
+                    }}
+                  >
+                    閉じる
+                  </button>
+                ) : null}
+              </div>
+
+              {!isMemberManagerUnlocked ? (
+                <form className="record-form" onSubmit={handleUnlockMemberManager}>
+                  <label>
+                    管理パスワード
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      placeholder="管理用の合言葉を入力"
+                      value={memberManagerPasscode}
+                      onChange={(event) => setMemberManagerPasscode(event.target.value)}
+                    />
+                  </label>
+
+                  <div className="form-actions full-width">
+                    <button type="submit" className="primary-button">
+                      入る
+                    </button>
+                  </div>
+
+                  <p className="helper-text full-width">管理用の合言葉を入力すると、隊員管理を開けます。</p>
+                </form>
+              ) : (
+                <>
+                  <form className="record-form" onSubmit={handleAdminCreate}>
+                    <label>
+                      新しいアカウント名
+                      <input
+                        type="text"
+                        placeholder="例: たろう"
+                        value={adminCreateDraft.displayName}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({ ...current, displayName: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      初期合言葉
+                      <input
+                        type="password"
+                        placeholder="4文字以上"
+                        value={adminCreateDraft.passcode}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({ ...current, passcode: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      権限
+                      <select
+                        value={adminCreateDraft.role}
+                        onChange={(event) =>
+                          setAdminCreateDraft((current) => ({
+                            ...current,
+                            role: event.target.value as MemberRole
+                          }))
+                        }
+                      >
+                        <option value="member">隊員</option>
+                        <option value="captain">隊長</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+
+                    <div className="form-actions full-width">
+                      <button type="submit" className="primary-button" disabled={isAdminSaving}>
+                        {isAdminSaving ? "作成中..." : "アカウントを作成"}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="record-list">
+                    {members.map((member) => (
+                      <article key={member.id} className="record-card">
+                        <div className="record-top">
+                          <div>
+                            <p className="record-meta">{member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"}</p>
+                            <h3 className="record-species">{member.displayName}</h3>
+                          </div>
+                        </div>
+
+                        <div className="record-form compact-member-actions">
+                          <label>
+                            権限
+                            <select
+                              value={adminRoleDrafts[member.id] ?? member.role}
+                              onChange={(event) =>
+                                setAdminRoleDrafts((current) => ({
+                                  ...current,
+                                  [member.id]: event.target.value as MemberRole
+                                }))
+                              }
+                            >
+                              <option value="member">隊員</option>
+                              <option value="captain">隊長</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </label>
+
+                          <div className="form-actions full-width">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => handleAdminRoleUpdate(member.id)}
+                              disabled={isAdminSaving}
+                            >
+                              権限を更新
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => handleAdminResetPasscode(member.id)}
+                              disabled={isAdminSaving}
+                            >
+                              合言葉を初期化
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleAdminDelete(member.id, member.displayName)}
+                              disabled={isAdminSaving}
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+      </>
     </div>
   );
 }
@@ -3155,15 +3332,6 @@ function MapCoordinatePicker({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
 function mergeResolvedRegion(currentLocation: string, resolvedRegion: string) {
   const current = currentLocation.trim();
   const resolved = resolvedRegion.trim();
@@ -3189,42 +3357,105 @@ function formatObservationLocation(location: string, locationDetail?: string | n
   return detail ? `${location} / ${detail}` : location;
 }
 
-function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: number; recordCount: number }> }) {
+function formatTaxonomyLabel(orderName?: string | null, familyName?: string | null) {
+  const orderLabel = orderName ? `${orderName}目` : "";
+  const familyLabel = familyName ? `${familyName}科` : "";
+  return `${orderLabel}${familyLabel}`.trim();
+}
+
+function ClassificationMeta({
+  orderName,
+  familyName,
+  className = "record-meta"
+}: {
+  orderName?: string | null;
+  familyName?: string | null;
+  className?: string;
+}) {
+  const taxonomyLabel = formatTaxonomyLabel(orderName, familyName);
+  if (!taxonomyLabel) {
+    return null;
+  }
+
+  return (
+    <p className={`classification-meta ${className}`}>
+      <span>{taxonomyLabel}</span>
+    </p>
+  );
+}
+
+function MonthlyOrderTrendChart({
+  data
+}: {
+  data: Array<{
+    label: string;
+    total: number;
+    segments: Array<{ key: string; label: string; count: number; color: string }>;
+  }>;
+}) {
   const width = 640;
   const height = 220;
-  const paddingX = 28;
+  const paddingX = 36;
   const paddingTop = 18;
   const paddingBottom = 34;
   const graphWidth = width - paddingX * 2;
   const graphHeight = height - paddingTop - paddingBottom;
   const maxValue = Math.max(...data.map((item) => item.total), 1);
+  const barGap = 18;
+  const barWidth = Math.max(32, (graphWidth - barGap * Math.max(data.length - 1, 0)) / Math.max(data.length, 1));
 
-  const points = data.map((item, index) => {
-    const x = paddingX + (graphWidth * index) / Math.max(data.length - 1, 1);
-    const y = paddingTop + graphHeight - (item.total / maxValue) * graphHeight;
-    return { ...item, x, y };
+  const bars = data.map((item, index) => {
+    const x = paddingX + index * (barWidth + barGap);
+    let stackedHeight = 0;
+    const segments = item.segments
+      .filter((segment) => segment.count > 0)
+      .map((segment) => {
+        const segmentHeight = (segment.count / maxValue) * graphHeight;
+        const y = paddingTop + graphHeight - stackedHeight - segmentHeight;
+        stackedHeight += segmentHeight;
+        return {
+          ...segment,
+          x,
+          y,
+          width: barWidth,
+          height: segmentHeight
+        };
+      });
+
+    return {
+      ...item,
+      x,
+      width: barWidth,
+      topY: paddingTop + graphHeight - (item.total / maxValue) * graphHeight,
+      segments
+    };
   });
 
-  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const areaPath = points.length
-    ? `${linePath} L ${points[points.length - 1].x} ${paddingTop + graphHeight} L ${points[0].x} ${paddingTop + graphHeight} Z`
-    : "";
+  const legendOrders = Array.from(
+    new Map(data.flatMap((item) => item.segments.map((segment) => [segment.key, segment] as const))).values()
+  ).map((order) => ({
+    ...order,
+    totalCount: data.reduce(
+      (sum, item) => sum + (item.segments.find((segment) => segment.key === order.key)?.count ?? 0),
+      0
+    )
+  }));
 
   return (
     <section className="trend-card">
       <div className="trend-head">
         <div>
           <p className="section-label">Trend</p>
-          <h3>月別ポイント推移</h3>
+          <h3>月別の目ごとの観察件数</h3>
         </div>
-          <p className="helper-text">直近6か月の観察ポイントと追加ポイントの合計です。観察件数も併記しています。</p>
+        <p className="helper-text">直近6か月の観察記録を、目ごとの件数で積み上げ表示しています。</p>
       </div>
 
       {data.length === 0 ? (
-        <p className="helper-text">まだグラフに表示できるポイントがありません。</p>
+        <p className="helper-text">まだグラフに表示できる観察記録がありません。</p>
       ) : (
         <>
-          <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="月別ポイント推移">
+          <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="月別の目ごとの観察件数">
             <line
               x1={paddingX}
               y1={paddingTop + graphHeight}
@@ -3232,30 +3463,35 @@ function MonthlyTrendChart({ data }: { data: Array<{ label: string; total: numbe
               y2={paddingTop + graphHeight}
               className="trend-axis"
             />
-            {areaPath ? <path d={areaPath} className="trend-area" /> : null}
-            {linePath ? <path d={linePath} className="trend-line" /> : null}
-            {points.map((point) => (
-              <g key={point.label}>
-                <circle cx={point.x} cy={point.y} r="5" className="trend-dot" />
-                <text x={point.x} y={height - 10} textAnchor="middle" className="trend-label">
-                  {point.label}
+            {bars.map((bar) => (
+              <g key={bar.label}>
+                {bar.segments.map((segment) => (
+                  <rect
+                    key={`${bar.label}-${segment.key}`}
+                    x={segment.x}
+                    y={segment.y}
+                    width={segment.width}
+                    height={Math.max(segment.height, 0)}
+                    fill={segment.color}
+                    className="trend-stack"
+                  />
+                ))}
+                <text x={bar.x + bar.width / 2} y={height - 10} textAnchor="middle" className="trend-label">
+                  {bar.label}
                 </text>
-                <text x={point.x} y={height - 24} textAnchor="middle" className="trend-count">
-                  {point.recordCount}件
-                </text>
-                <text x={point.x} y={point.y - 12} textAnchor="middle" className="trend-value">
-                  {point.total}P
+                <text x={bar.x + bar.width / 2} y={bar.topY - 10} textAnchor="middle" className="trend-value">
+                  {bar.total}件
                 </text>
               </g>
             ))}
           </svg>
 
           <div className="trend-legend">
-            {data.map((item) => (
-              <div key={item.label} className="trend-legend-item">
-                <span>{item.label}</span>
-                <strong>{item.total}P</strong>
-                <small>{item.recordCount}件</small>
+            {legendOrders.map((order) => (
+              <div key={order.key} className="trend-legend-item">
+                <span className="trend-legend-swatch" style={{ backgroundColor: order.color }} />
+                <strong>{order.label}</strong>
+                <small>{order.totalCount}件</small>
               </div>
             ))}
           </div>
@@ -3399,6 +3635,51 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
   });
 }
 
+function buildInquiryDescendantSpeciesRows(
+  logs: InquiryObservation[],
+  browseMode: InquiryBrowseMode
+): InquiryDescendantSpeciesRow[] {
+  if (browseMode === "species") {
+    return [];
+  }
+
+  const grouped = new Map<string, InquiryDescendantSpeciesRow>();
+
+  for (const log of logs) {
+    const familyName = log.familyName ?? "";
+    const scientificName = log.scientificName ?? "";
+    const key = `${familyName}||${log.species}||${scientificName}`;
+    const current =
+      grouped.get(key) ??
+      {
+        key,
+        familyName,
+        species: log.species,
+        scientificName,
+        count: 0
+      };
+
+    current.count += 1;
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()].sort((left, right) => {
+    if (browseMode === "order") {
+      const familyComparison = left.familyName.localeCompare(right.familyName, "ja-JP");
+      if (familyComparison !== 0) {
+        return familyComparison;
+      }
+    }
+
+    const countComparison = right.count - left.count;
+    if (countComparison !== 0) {
+      return countComparison;
+    }
+
+    return left.species.localeCompare(right.species, "ja-JP");
+  });
+}
+
 function buildRankingPeriodOptions(logs: ObservationLog[], pointEntries: PointEntry[], currentYear: number): RankingPeriodOption[] {
   const currentMonthKey = toMonthKey(new Date());
   const monthKeys = new Set<string>([currentMonthKey]);
@@ -3467,60 +3748,81 @@ function buildRankingSummaries(
     });
 }
 
-function buildMonthlyPointSeries(
+function buildMonthlyOrderCountSeries(
   logs: ObservationLog[],
-  pointEntries: PointEntry[],
-  memberId: string,
   months = 6
-): Array<{ label: string; total: number; recordCount: number }> {
-  const totals = new Map<string, { total: number; recordCount: number }>();
+): Array<{
+  label: string;
+  total: number;
+  segments: Array<{ key: string; label: string; count: number; color: string }>;
+}> {
+  const colorPalette = [
+    "#2f6b3f",
+    "#5b8c2a",
+    "#d9822b",
+    "#b84a39",
+    "#2d7a86",
+    "#7b5ea7",
+    "#9c6b30",
+    "#506b95"
+  ];
+  const monthBuckets = new Map<string, Map<string, number>>();
   const current = new Date();
   const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1);
+  const includedMonthKeys: string[] = [];
 
   for (let offset = months - 1; offset >= 0; offset -= 1) {
     const monthDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - offset, 1);
     const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-    totals.set(key, { total: 0, recordCount: 0 });
+    includedMonthKeys.push(key);
+    monthBuckets.set(key, new Map());
   }
 
   for (const log of logs) {
-    if (log.memberId !== memberId) {
-      continue;
-    }
-
     const observedAt = new Date(log.observedAt);
     const key = `${observedAt.getFullYear()}-${String(observedAt.getMonth() + 1).padStart(2, "0")}`;
-    if (totals.has(key)) {
-      const currentMonthTotal = totals.get(key)!;
-      totals.set(key, {
-        total: currentMonthTotal.total + log.points,
-        recordCount: currentMonthTotal.recordCount + 1
-      });
+    const bucket = monthBuckets.get(key);
+    if (bucket) {
+      const orderLabel = (log.orderName ?? "").trim() || "未分類";
+      bucket.set(orderLabel, (bucket.get(orderLabel) ?? 0) + 1);
     }
   }
 
-  for (const entry of pointEntries) {
-    if (entry.memberId !== memberId) {
-      continue;
-    }
-
-    const awardedAt = new Date(entry.awardedAt);
-    const key = `${awardedAt.getFullYear()}-${String(awardedAt.getMonth() + 1).padStart(2, "0")}`;
-    if (totals.has(key)) {
-      const currentMonthTotal = totals.get(key)!;
-      totals.set(key, {
-        total: currentMonthTotal.total + entry.points,
-        recordCount: currentMonthTotal.recordCount
-      });
+  const orderTotals = new Map<string, number>();
+  for (const monthKey of includedMonthKeys) {
+    const bucket = monthBuckets.get(monthKey) ?? new Map<string, number>();
+    for (const [orderLabel, count] of bucket.entries()) {
+      orderTotals.set(orderLabel, (orderTotals.get(orderLabel) ?? 0) + count);
     }
   }
 
-  return Array.from(totals.entries()).map(([key, value]) => {
+  const orderedLabels = Array.from(orderTotals.entries())
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+
+      return left[0].localeCompare(right[0], "ja-JP");
+    })
+    .map(([label]) => label);
+
+  const orderColors = new Map(
+    orderedLabels.map((label, index) => [label, colorPalette[index % colorPalette.length]])
+  );
+
+  return Array.from(monthBuckets.entries()).map(([key, bucket]) => {
     const [, month] = key.split("-");
+    const segments = orderedLabels.map((label) => ({
+      key: label,
+      label: `${label}目`,
+      count: bucket.get(label) ?? 0,
+      color: orderColors.get(label) ?? colorPalette[0]
+    }));
+
     return {
       label: `${Number(month)}月`,
-      total: value.total,
-      recordCount: value.recordCount
+      total: segments.reduce((sum, segment) => sum + segment.count, 0),
+      segments
     };
   });
 }

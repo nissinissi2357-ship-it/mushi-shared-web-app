@@ -1,27 +1,20 @@
 import { NextResponse } from "next/server";
-import { deletePointEntry, getViewerFromSession, updatePointEntry } from "@/lib/data";
-import { readSession } from "@/lib/session";
+import { deletePointEntry, getPublicActor, updatePointEntry } from "@/lib/data";
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ entryId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { entryId } = await context.params;
     const body = await request.json();
-    const memberId = String(body.memberId || "").trim() || viewer.member.id;
+    const memberId = String(body.memberId || "").trim();
     const awardedAt = String(body.awardedAt || "").trim();
     const title = String(body.title || "").trim();
     const description = String(body.description || "").trim();
     const points = Number(body.points);
 
-    if (!awardedAt || !title || Number.isNaN(points)) {
+    if (!memberId || !awardedAt || !title || Number.isNaN(points)) {
       return NextResponse.json({ error: "必須項目を入力してください。" }, { status: 400 });
     }
 
@@ -34,7 +27,7 @@ export async function PATCH(
         description,
         points
       },
-      viewer.member
+      getPublicActor()
     );
 
     return NextResponse.json({ entry });
@@ -51,14 +44,8 @@ export async function DELETE(
   context: { params: Promise<{ entryId: string }> }
 ) {
   try {
-    const session = await readSession();
-    const viewer = await getViewerFromSession(session);
-    if (!viewer) {
-      return NextResponse.json({ error: "ログインしてください。" }, { status: 401 });
-    }
-
     const { entryId } = await context.params;
-    await deletePointEntry(entryId, viewer.member);
+    await deletePointEntry(entryId, getPublicActor());
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(
