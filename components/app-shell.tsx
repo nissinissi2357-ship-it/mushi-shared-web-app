@@ -640,7 +640,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const logIndex = targetLogs.findIndex((entry) => entry.id === log.id);
     const nextPage = logIndex >= 0 ? Math.floor(logIndex / logPageSize) + 1 : 1;
     setLogsPage(nextPage);
-    setActiveTab("logs");
   }
 
   async function handleExportLogs() {
