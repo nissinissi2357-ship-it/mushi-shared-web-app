@@ -70,6 +70,9 @@ select {
 .hero {
   border-radius: 8px;
   padding: 28px;
+  position: relative;
+  z-index: 5;
+  overflow: visible;
 }
 
 .hero-top,
@@ -435,6 +438,10 @@ select {
 
 .app-menu-popup {
   min-width: 150px;
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
 }
 
 .ghost-button {
