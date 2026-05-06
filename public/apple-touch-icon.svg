@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <rect width="180" height="180" fill="#f7f2e9"/>
+  <rect x="10" y="10" width="160" height="160" fill="#fffaf0" stroke="#1c4b2c" stroke-width="8"/>
+  <circle cx="56" cy="63" r="16" fill="#d98b2b" stroke="#1c4b2c" stroke-width="5"/>
+  <circle cx="124" cy="63" r="16" fill="#d98b2b" stroke="#1c4b2c" stroke-width="5"/>
+  <path d="M42 111c10-20 26-31 48-31s38 11 48 31" fill="none" stroke="#1c4b2c" stroke-linecap="round" stroke-width="9"/>
+  <path d="M34 138h112" stroke="#1c4b2c" stroke-width="7"/>
+  <text x="90" y="158" text-anchor="middle" font-family="Meiryo, 'Yu Gothic UI', sans-serif" font-size="28" font-weight="700" fill="#1c4b2c">虫</text>
+</svg>

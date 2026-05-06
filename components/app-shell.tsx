@@ -26,11 +26,14 @@ import type {
   TabId
 } from "@/lib/types";
 
-const tabs: Array<{ id: TabId; label: string }> = [
+const primaryTabs: Array<{ id: TabId; label: string }> = [
   { id: "home", label: "ホーム" },
   { id: "record", label: "観察登録" },
   { id: "logs", label: "観察ログ" },
-  { id: "inquiry", label: "記録照会" },
+  { id: "inquiry", label: "記録照会" }
+];
+
+const utilityTabs: Array<{ id: TabId; label: string }> = [
   { id: "points", label: "追加ポイント" },
   { id: "members", label: "隊員管理" }
 ];
@@ -217,6 +220,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [selectedInquiryYear, setSelectedInquiryYear] = useState("");
   const [inquirySpeciesPage, setInquirySpeciesPage] = useState(1);
   const [isInquiryKureExpanded, setIsInquiryKureExpanded] = useState(false);
+  const [isAppMenuOpen, setIsAppMenuOpen] = useState(false);
   const [highlightedLogId, setHighlightedLogId] = useState<string | null>(null);
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
@@ -636,7 +640,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     const logIndex = targetLogs.findIndex((entry) => entry.id === log.id);
     const nextPage = logIndex >= 0 ? Math.floor(logIndex / logPageSize) + 1 : 1;
     setLogsPage(nextPage);
-    setActiveTab("logs");
   }
 
   async function handleExportLogs() {
@@ -1337,6 +1340,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     setStatusMessage("隊員管理を開きました。");
   }
 
+  function handleSelectTab(tabId: TabId) {
+    setActiveTab(tabId);
+    setIsAppMenuOpen(false);
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -1348,6 +1356,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
           <div className="hero-menu">
             {selectedMember ? <p className="hero-member">入力対象: {selectedMember.displayName}</p> : null}
+            <div className="card-menu app-menu">
+              <button
+                type="button"
+                className="menu-button"
+                onClick={() => setIsAppMenuOpen((current) => !current)}
+                aria-expanded={isAppMenuOpen}
+                aria-label="メニューを開く"
+              >
+                …
+              </button>
+              {isAppMenuOpen ? (
+                <div className="card-menu-popup app-menu-popup">
+                  {utilityTabs.map((tab) => (
+                    <button key={tab.id} type="button" className="secondary-button" onClick={() => handleSelectTab(tab.id)}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1547,15 +1575,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       ) : null}
 
       <>
-          <nav className="tab-bar" aria-label="画面切り替え">
-            {tabs.map((tab) => (
+          <nav className="app-nav" aria-label="画面切り替え">
+            {primaryTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                className={tab.id === activeTab ? "tab-button is-active" : "tab-button"}
-                onClick={() => setActiveTab(tab.id)}
+                className={tab.id === activeTab ? "app-nav-button is-active" : "app-nav-button"}
+                onClick={() => handleSelectTab(tab.id)}
               >
-                {tab.label}
+                <AppNavIcon tabId={tab.id} />
+                <span>{tab.label}</span>
               </button>
             ))}
           </nav>
@@ -3361,6 +3390,44 @@ function formatTaxonomyLabel(orderName?: string | null, familyName?: string | nu
   const orderLabel = orderName ? `${orderName}目` : "";
   const familyLabel = familyName ? `${familyName}科` : "";
   return `${orderLabel}${familyLabel}`.trim();
+}
+
+function AppNavIcon({ tabId }: { tabId: TabId }) {
+  if (tabId === "home") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 11.5 12 5l8 6.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.5 10.5V19h11v-8.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  if (tabId === "record") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="4.5" width="14" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.9" />
+        <path d="M12 8v8M8 12h8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (tabId === "logs") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6.5h12M6 11.5h12M6 16.5h8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+        <circle cx="17.5" cy="16.5" r="1.5" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="16" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="8" cy="16" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M10 8h3.8M8 10.2v3.6M10 16h3.8M16 10.2v3.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function ClassificationMeta({
