@@ -1746,7 +1746,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <MapCoordinatePicker
                     latitude={draft.latitude}
                     longitude={draft.longitude}
-                    currentRegion={draft.location}
                     locationDetail={draft.locationDetail}
                     onChange={(coords) =>
                       setDraft((current) => ({
@@ -1758,7 +1757,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                     onAddressResolved={(result) =>
                       setDraft((current) => ({
                         ...current,
-                        location: mergeResolvedRegion(current.location, result.region),
                         locationDetail: result.locationDetail || current.locationDetail
                       }))
                     }
@@ -2104,7 +2102,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                             <MapCoordinatePicker
                               latitude={editingLogDraft.latitude}
                               longitude={editingLogDraft.longitude}
-                              currentRegion={editingLogDraft.location}
                               locationDetail={editingLogDraft.locationDetail}
                               onChange={(coords) =>
                                 setEditingLogDraft((current) => ({
@@ -2116,7 +2113,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                               onAddressResolved={(result) =>
                                 setEditingLogDraft((current) => ({
                                   ...current,
-                                  location: mergeResolvedRegion(current.location, result.region),
                                   locationDetail: result.locationDetail || current.locationDetail
                                 }))
                               }
@@ -2834,14 +2830,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 function MapCoordinatePicker({
   latitude,
   longitude,
-  currentRegion,
   locationDetail,
   onChange,
   onAddressResolved
 }: {
   latitude: string;
   longitude: string;
-  currentRegion: string;
   locationDetail?: string;
   onChange: (coords: { latitude: string; longitude: string }) => void;
   onAddressResolved?: (result: { region: string; locationDetail: string }) => void;
@@ -2855,10 +2849,6 @@ function MapCoordinatePicker({
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const [pendingSelection, setPendingSelection] = useState<{
-    region: string;
-    locationDetail: string;
-  } | null>(null);
-  const [conflictSelection, setConflictSelection] = useState<{
     region: string;
     locationDetail: string;
   } | null>(null);
@@ -3097,7 +3087,6 @@ function MapCoordinatePicker({
   function commitPendingSelection(selection: { region: string; locationDetail: string }) {
     onAddressResolved?.(selection);
     setPendingSelection(null);
-    setConflictSelection(null);
     setIsMapOpen(false);
 
     if (selection.region || selection.locationDetail) {
@@ -3111,21 +3100,9 @@ function MapCoordinatePicker({
     }
   }
 
-  function shouldConfirmRegionConflict(selection: { region: string; locationDetail: string }) {
-    const current = currentRegion.trim();
-    const resolved = selection.region.trim();
-
-    if (!current || !resolved || current === resolved) {
-      return false;
-    }
-
-    return mergeResolvedRegion(current, resolved) !== current;
-  }
-
   async function resolveAddress(nextLatitude: number, nextLongitude: number) {
     setIsResolvingAddress(true);
     setPendingSelection(null);
-    setConflictSelection(null);
 
     try {
       const response = await fetch(
@@ -3224,7 +3201,6 @@ function MapCoordinatePicker({
             onChange({ latitude: "", longitude: "" });
             setLocationMessage("");
             setPendingSelection(null);
-            setConflictSelection(null);
           }}
         >
           座標をクリア
@@ -3334,53 +3310,13 @@ function MapCoordinatePicker({
                 <button
                   type="button"
                   className="primary-button"
-                  onClick={() => {
-                    if (shouldConfirmRegionConflict(pendingSelection)) {
-                      setConflictSelection(pendingSelection);
-                      return;
-                    }
-
-                    commitPendingSelection(pendingSelection);
-                  }}
+                  onClick={() => commitPendingSelection(pendingSelection)}
                   disabled={isResolvingAddress}
                 >
                   この地点で確定する
                 </button>
               </div>
             ) : null}
-          </section>
-        </div>
-      ) : null}
-
-      {conflictSelection ? (
-        <div className="alert-overlay" onClick={() => setConflictSelection(null)}>
-          <section className="alert-panel" onClick={(event) => event.stopPropagation()}>
-            <p className="section-label">Check</p>
-            <h2>地図の場所を確認してください</h2>
-            <p>
-              今の観察地域は {currentRegion || "未選択"} ですが、地図では {conflictSelection.region || "別の地域"} が候補です。
-              地図で選んだ場所に更新しますか？
-            </p>
-            <div className="inline-actions">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => commitPendingSelection(conflictSelection)}
-              >
-                地図の場所に更新
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  setConflictSelection(null);
-                  setPendingSelection(null);
-                  setLocationMessage("今の観察地域をそのまま残しました。");
-                }}
-              >
-                今の地域を残す
-              </button>
-            </div>
           </section>
         </div>
       ) : null}
