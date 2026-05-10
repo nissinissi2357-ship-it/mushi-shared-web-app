@@ -2852,6 +2852,7 @@ function MapCoordinatePicker({
   const [viewportSize, setViewportSize] = useState(320);
   const [isLocating, setIsLocating] = useState(false);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const [pendingSelection, setPendingSelection] = useState<{
     region: string;
@@ -2926,7 +2927,7 @@ function MapCoordinatePicker({
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [isMapOpen]);
 
   function updateZoom(nextZoom: number, anchorClientX?: number, anchorClientY?: number) {
     const clampedZoom = clampZoom(nextZoom);
@@ -3097,6 +3098,7 @@ function MapCoordinatePicker({
     onAddressResolved?.(selection);
     setPendingSelection(null);
     setConflictSelection(null);
+    setIsMapOpen(false);
 
     if (selection.region || selection.locationDetail) {
       const found = [
@@ -3204,15 +3206,14 @@ function MapCoordinatePicker({
         <div>
           <p className="section-label">Map</p>
           <strong className="map-title">地図から場所を選ぶ</strong>
-          <strong>地図から座標を選ぶ</strong>
         </div>
-          <p className="helper-text">
-            任意項目です。ドラッグで移動、ピンチやホイール、右上の + / - で拡大縮小できます。タップで座標を選べます。
-          </p>
-          <p className="helper-text map-help">「現在地を使う」を押すと、今いる場所の座標をすぐに入れられます。</p>
+        <p className="helper-text">任意項目です。必要なときだけ地図を大きく開いて選べます。</p>
       </div>
 
       <div className="map-controls">
+        <button type="button" className="primary-button" onClick={() => setIsMapOpen(true)}>
+          地図を開く
+        </button>
         <button type="button" className="secondary-button" onClick={handleUseCurrentLocation} disabled={isLocating}>
           {isLocating ? "現在地取得中..." : "現在地を使う"}
         </button>
@@ -3230,70 +3231,14 @@ function MapCoordinatePicker({
         </button>
       </div>
 
-      <div
-        ref={mapRef}
-      className="map-canvas"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onWheel={handleWheel}
-        role="button"
-        tabIndex={0}
-        aria-label="観察場所の地図"
-      >
-        <div className="map-overlay-controls" onPointerDown={stopMapGesture}>
-          <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom + 1)} aria-label="拡大">
-            +
-          </button>
-          <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom - 1)} aria-label="縮小">
-            -
-          </button>
-        </div>
-
-        {tiles.map((tile) => (
-          <img
-            key={`${tile.zoom}-${tile.x}-${tile.y}`}
-            src={`https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`}
-            alt=""
-            className="map-tile"
-            style={{ left: `${tile.left}px`, top: `${tile.top}px` }}
-            draggable={false}
-          />
-        ))}
-        {markerPosition ? (
-          <span
-            className="map-marker"
-            style={{
-              left: `${Math.max(0, Math.min(100, (markerPosition.x / mapSize) * 100))}%`,
-              top: `${Math.max(0, Math.min(100, (markerPosition.y / mapSize) * 100))}%`
-            }}
-          />
-        ) : null}
+      <div className="map-picker-summary">
+        <p className="helper-text">
+          {latitude && longitude ? `座標: ${latitude}, ${longitude}` : "まだ地図の地点は選ばれていません。"}
+        </p>
+        {locationDetail ? <p className="helper-text">詳細場所: {locationDetail}</p> : null}
       </div>
 
       {locationMessage ? <p className="helper-text">{locationMessage}</p> : null}
-      {isResolvingAddress ? <p className="helper-text">住所候補を確認しています...</p> : null}
-      {pendingSelection ? (
-        <div className="inline-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => {
-              if (shouldConfirmRegionConflict(pendingSelection)) {
-                setConflictSelection(pendingSelection);
-                return;
-              }
-
-              commitPendingSelection(pendingSelection);
-            }}
-            disabled={isResolvingAddress}
-          >
-            この地点で確定する
-          </button>
-        </div>
-      ) : null}
 
       <div className="coordinate-inputs">
         <label>
@@ -3323,7 +3268,89 @@ function MapCoordinatePicker({
           />
         </label>
       </div>
-      {locationDetail ? <p className="helper-text">詳細場所: {locationDetail}</p> : null}
+
+      {isMapOpen ? (
+        <div className="alert-overlay" onClick={() => setIsMapOpen(false)}>
+          <section className="alert-panel inquiry-dialog map-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="map-dialog-head">
+              <div>
+                <p className="section-label">Map</p>
+                <h2>地図から場所を選ぶ</h2>
+                <p className="helper-text map-help">
+                  ドラッグで移動、ピンチやホイール、右上の + / - で拡大縮小できます。タップで座標を選べます。
+                </p>
+              </div>
+              <button type="button" className="ghost-button map-close-button" onClick={() => setIsMapOpen(false)}>
+                閉じる
+              </button>
+            </div>
+
+            <div
+              ref={mapRef}
+              className="map-canvas map-canvas-dialog"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onWheel={handleWheel}
+              role="button"
+              tabIndex={0}
+              aria-label="観察場所の地図"
+            >
+              <div className="map-overlay-controls" onPointerDown={stopMapGesture}>
+                <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom + 1)} aria-label="拡大">
+                  +
+                </button>
+                <button type="button" className="map-zoom-button" onClick={() => updateZoom(zoom - 1)} aria-label="縮小">
+                  -
+                </button>
+              </div>
+
+              {tiles.map((tile) => (
+                <img
+                  key={`${tile.zoom}-${tile.x}-${tile.y}`}
+                  src={`https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`}
+                  alt=""
+                  className="map-tile"
+                  style={{ left: `${tile.left}px`, top: `${tile.top}px` }}
+                  draggable={false}
+                />
+              ))}
+              {markerPosition ? (
+                <span
+                  className="map-marker"
+                  style={{
+                    left: `${Math.max(0, Math.min(100, (markerPosition.x / mapSize) * 100))}%`,
+                    top: `${Math.max(0, Math.min(100, (markerPosition.y / mapSize) * 100))}%`
+                  }}
+                />
+              ) : null}
+            </div>
+
+            {isResolvingAddress ? <p className="helper-text">住所候補を確認しています...</p> : null}
+            {pendingSelection ? (
+              <div className="inline-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    if (shouldConfirmRegionConflict(pendingSelection)) {
+                      setConflictSelection(pendingSelection);
+                      return;
+                    }
+
+                    commitPendingSelection(pendingSelection);
+                  }}
+                  disabled={isResolvingAddress}
+                >
+                  この地点で確定する
+                </button>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
 
       {conflictSelection ? (
         <div className="alert-overlay" onClick={() => setConflictSelection(null)}>
