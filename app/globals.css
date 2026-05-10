@@ -796,22 +796,14 @@ select {
   display: grid;
   gap: 12px;
   padding: 16px;
-  border-radius: 20px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(31, 42, 31, 0.08);
   width: 100%;
 }
 
 .coordinate-picker-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: end;
-}
-
-.coordinate-picker-head strong:not(.map-title),
-.coordinate-picker-head > .helper-text:not(.map-help) {
-  display: none;
+  display: grid;
+  gap: 6px;
 }
 
 .coordinate-picker-head strong {
@@ -822,33 +814,21 @@ select {
 .map-controls,
 .coordinate-inputs {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: center;
-}
-
-.map-controls {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .coordinate-inputs {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.zoom-control {
+.map-picker-summary {
   display: grid;
-  gap: 6px;
-  font-size: 0;
-}
-
-.zoom-label {
-  font-size: 0.88rem;
-  color: var(--muted);
-}
-
-.zoom-control input {
-  width: 100%;
-  font-size: 1rem;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(31, 42, 31, 0.1);
+  background: rgba(255, 255, 255, 0.66);
 }
 
 .map-controls .ghost-button {
@@ -864,14 +844,18 @@ select {
   position: relative;
   width: 100%;
   max-width: none;
-  aspect-ratio: 1;
+  aspect-ratio: 1.15;
   overflow: hidden;
-  border-radius: 18px;
   cursor: grab;
   border: 1px solid rgba(31, 42, 31, 0.12);
   background: #d8e3cf;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
   touch-action: none;
+}
+
+.map-canvas-dialog {
+  min-height: min(70vh, 560px);
+  aspect-ratio: auto;
 }
 
 .map-controls .ghost-button::before {
@@ -933,6 +917,34 @@ select {
   border: 3px solid #fffaf0;
   box-shadow: 0 6px 16px rgba(61, 51, 30, 0.28);
   transform: translate(-50%, -50%);
+}
+
+.map-dialog {
+  width: min(920px, 100%);
+}
+
+.map-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.map-dialog-head h2 {
+  margin: 8px 0 6px;
+}
+
+.map-close-button {
+  white-space: nowrap;
+}
+
+.coordinate-picker .map-controls .ghost-button {
+  font-size: 0.95rem;
+}
+
+.coordinate-picker .map-controls .ghost-button::before {
+  content: none;
 }
 
 .inline-actions {
@@ -1175,5 +1187,13 @@ select:disabled {
   .map-controls,
   .coordinate-inputs {
     grid-template-columns: 1fr;
+  }
+
+  .map-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .map-canvas-dialog {
+    min-height: min(62vh, 480px);
   }
 }
