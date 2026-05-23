@@ -50,6 +50,17 @@ type ObservationRow = {
   guide_pdf_path?: string | null;
 };
 
+type InquiryObservationRow = {
+  id: string;
+  observed_at: string;
+  location: string;
+  location_detail?: string | null;
+  order_name?: string | null;
+  family_name?: string | null;
+  species: string;
+  scientific_name?: string | null;
+};
+
 type PointEntryRow = {
   id: string;
   member_id: string;
@@ -59,11 +70,39 @@ type PointEntryRow = {
   points: number;
 };
 
+type PagedQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>;
+};
+
+const SUPABASE_PAGE_SIZE = 1000;
+
 const PUBLIC_ACTOR: Member = {
   id: "public-viewer",
   displayName: "公開モード",
   role: "admin"
 };
+
+async function fetchAllRows<T>(query: PagedQuery<T>): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await query.range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < SUPABASE_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return rows;
+}
 
 export async function getAppData(): Promise<DataResult> {
   try {
@@ -88,16 +127,14 @@ export async function getAppData(): Promise<DataResult> {
 
 export async function listMembers(): Promise<Member[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("club_members")
-    .select("id, display_name, role")
-    .order("created_at", { ascending: true });
+  const rows = await fetchAllRows<ClubMemberRow>(
+    supabase
+      .from("club_members")
+      .select("id, display_name, role")
+      .order("created_at", { ascending: true })
+  );
 
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => mapMemberRow(row as ClubMemberRow));
+  return rows.map((row) => mapMemberRow(row));
 }
 
 export async function getViewerFromSession(session: SessionMember | null): Promise<LoginResult | null> {
@@ -141,16 +178,14 @@ export function getPublicActor(): Member {
 export async function listInquiryObservations(): Promise<InquiryObservation[]> {
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("observation_logs")
-      .select("id, observed_at, location, location_detail, order_name, family_name, species, scientific_name")
-      .order("observed_at", { ascending: false });
+    const rows = await fetchAllRows<InquiryObservationRow>(
+      supabase
+        .from("observation_logs")
+        .select("id, observed_at, location, location_detail, order_name, family_name, species, scientific_name")
+        .order("observed_at", { ascending: false })
+    );
 
-    if (error) {
-      throw error;
-    }
-
-    return (data ?? []).map((row) => ({
+    return rows.map((row) => ({
       id: String(row.id),
       observedAt: String(row.observed_at),
       location: String(row.location),
@@ -547,12 +582,13 @@ export async function listExportLogs(
     query = query.eq("member_id", effectiveMemberId);
   }
 
-  const { data, error } = await query;
-  if (error) {
-    throw error;
-  }
+  const rows = await fetchAllRows<
+    ObservationRow & {
+      club_members?: { display_name?: string | null }[] | { display_name?: string | null } | null;
+    }
+  >(query);
 
-  return (data ?? []).map((row) => mapExportLogRow(row as ObservationRow & { club_members?: { display_name?: string | null }[] | { display_name?: string | null } | null }));
+  return rows.map((row) => mapExportLogRow(row));
 }
 
 async function buildViewer(member: Member): Promise<LoginResult> {
@@ -604,12 +640,9 @@ async function getLogsForMember(memberId: string, role: MemberRole): Promise<Obs
           .eq("member_id", memberId)
           .order("observed_at", { ascending: false });
 
-  const { data, error } = await query;
-  if (error) {
-    throw error;
-  }
+  const rows = await fetchAllRows<ObservationRow>(query);
 
-  return (data ?? []).map((row) => mapLogRow(row as ObservationRow));
+  return rows.map((row) => mapLogRow(row));
 }
 
 async function getPointEntriesForMember(memberId: string, role: MemberRole): Promise<PointEntry[]> {
@@ -626,40 +659,35 @@ async function getPointEntriesForMember(memberId: string, role: MemberRole): Pro
           .eq("member_id", memberId)
           .order("awarded_at", { ascending: false });
 
-  const { data, error } = await query;
-  if (error) {
-    throw error;
-  }
+  const rows = await fetchAllRows<PointEntryRow>(query);
 
-  return (data ?? []).map((row) => mapPointEntryRow(row as PointEntryRow));
+  return rows.map((row) => mapPointEntryRow(row));
 }
 
 async function getAllSummaries() {
   const supabase = createAdminClient();
-  const [
-    { data: memberRows, error: memberError },
-    { data: logRows, error: logError },
-    { data: pointRows, error: pointError }
-  ] = await Promise.all([
-    supabase.from("club_members").select("id, display_name, role").order("created_at", { ascending: true }),
-    supabase
-      .from("observation_logs")
-      .select("id, member_id, observed_at, location, location_detail, latitude, longitude, order_name, family_name, species, scientific_name, points, scoring_memo, image_path, guide_pdf_path")
-      .order("observed_at", { ascending: false }),
-    supabase
-      .from("point_entries")
-      .select("id, member_id, awarded_at, title, description, points")
-      .order("awarded_at", { ascending: false })
+  const [memberRows, logRows, pointRows] = await Promise.all([
+    fetchAllRows<ClubMemberRow>(
+      supabase.from("club_members").select("id, display_name, role").order("created_at", { ascending: true })
+    ),
+    fetchAllRows<ObservationRow>(
+      supabase
+        .from("observation_logs")
+        .select("id, member_id, observed_at, location, location_detail, latitude, longitude, order_name, family_name, species, scientific_name, points, scoring_memo, image_path, guide_pdf_path")
+        .order("observed_at", { ascending: false })
+    ),
+    fetchAllRows<PointEntryRow>(
+      supabase
+        .from("point_entries")
+        .select("id, member_id, awarded_at, title, description, points")
+        .order("awarded_at", { ascending: false })
+    )
   ]);
 
-  if (memberError || logError || pointError) {
-    throw memberError || logError || pointError;
-  }
-
   return buildSummaries(
-    (memberRows ?? []).map((row) => mapMemberRow(row as ClubMemberRow)),
-    (logRows ?? []).map((row) => mapLogRow(row as ObservationRow)),
-    (pointRows ?? []).map((row) => mapPointEntryRow(row as PointEntryRow))
+    memberRows.map((row) => mapMemberRow(row)),
+    logRows.map((row) => mapLogRow(row)),
+    pointRows.map((row) => mapPointEntryRow(row))
   );
 }
 
