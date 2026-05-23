@@ -208,7 +208,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
   const [inquirySearchMode, setInquirySearchMode] = useState<"and" | "or">("and");
-  const [inquiryBrowseMode, setInquiryBrowseMode] = useState<InquiryBrowseMode>("species");
+  const [inquiryBrowseMode, setInquiryBrowseMode] = useState<InquiryBrowseMode>("order");
   const [inquirySearchOrder, setInquirySearchOrder] = useState("");
   const [inquirySearchFamily, setInquirySearchFamily] = useState("");
   const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
@@ -749,8 +749,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       scoringMemo: parsed.scoringMemo || current.scoringMemo
     }));
 
+    const foundClassification = parsed.species ? mergedClassification : null;
     const found = [
       parsed.species ? `種名: ${parsed.species}` : "",
+      foundClassification?.orderName ? `目: ${foundClassification.orderName}` : "",
+      foundClassification?.familyName ? `科: ${foundClassification.familyName}` : "",
+      foundClassification?.scientificName ? `学名: ${foundClassification.scientificName}` : "",
       parsed.points !== null ? `ポイント: ${parsed.points}P` : "",
       parsed.location ? `観察地域: ${parsed.location}` : "",
       parsed.observedAt ? `日時: ${parsed.observedAt}` : ""
@@ -2328,9 +2332,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                       value={inquiryBrowseMode}
                       onChange={(event) => setInquiryBrowseMode(event.target.value as InquiryBrowseMode)}
                     >
-                      <option value="species">種名</option>
-                      <option value="family">科名</option>
                       <option value="order">目名</option>
+                      <option value="family">科名</option>
+                      <option value="species">種名</option>
                     </select>
                   </label>
                   <button
@@ -2459,7 +2463,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                       <h3>{inquiryBrowseMode === "species" ? "種類一覧" : inquiryBrowseMode === "family" ? "科一覧" : "目一覧"}</h3>
                     </div>
                     <p className="helper-text">
-                      50音順に並んでいます。{inquiryBrowseMode === "species" ? "種名" : inquiryBrowseMode === "family" ? "科名" : "目名"}を押すと詳細が開きます。
+                      50音順に並んでいます。
+                      {inquiryBrowseMode === "order"
+                        ? "目名を押すと、地域別の記録と種一覧が開きます。"
+                        : inquiryBrowseMode === "family"
+                          ? "科名を押すと、地域別の記録と種一覧が開きます。"
+                          : "種名を押すと詳細が開きます。"}
                     </p>
                   </div>
 
