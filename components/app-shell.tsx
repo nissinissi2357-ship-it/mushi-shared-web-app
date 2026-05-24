@@ -109,7 +109,13 @@ type InquiryDescendantSpeciesRow = {
   count: number;
 };
 
-type InquiryBrowseMode = "species" | "family" | "order";
+type InquiryOrderRow = {
+  key: string;
+  orderName: string;
+  count: number;
+};
+
+type InquirySortMode = "name" | "count";
 
 function toLocalInputValue(date = new Date()) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -208,7 +214,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [logSearchLocation, setLogSearchLocation] = useState("");
   const [logSearchDate, setLogSearchDate] = useState("");
   const [inquirySearchMode, setInquirySearchMode] = useState<"and" | "or">("and");
-  const [inquiryBrowseMode, setInquiryBrowseMode] = useState<InquiryBrowseMode>("order");
+  const [inquirySortMode, setInquirySortMode] = useState<InquirySortMode>("name");
   const [inquirySearchOrder, setInquirySearchOrder] = useState("");
   const [inquirySearchFamily, setInquirySearchFamily] = useState("");
   const [inquirySearchSpecies, setInquirySearchSpecies] = useState("");
@@ -216,6 +222,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [inquirySearchDate, setInquirySearchDate] = useState("");
   const [inquiryLogs, setInquiryLogs] = useState<InquiryObservation[]>([]);
   const [isInquiryLoading, setIsInquiryLoading] = useState(false);
+  const [selectedInquiryOrder, setSelectedInquiryOrder] = useState("");
   const [selectedInquirySpecies, setSelectedInquirySpecies] = useState("");
   const [selectedInquiryYear, setSelectedInquiryYear] = useState("");
   const [inquirySpeciesPage, setInquirySpeciesPage] = useState(1);
@@ -327,43 +334,42 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     inquirySearchSpecies
   ]);
 
-  const inquiryItemList = useMemo(() => {
-    const values = filteredInquiryLogs.map((log) => {
-      if (inquiryBrowseMode === "order") {
-        return log.orderName ?? "";
-      }
+  const inquiryOrderRows = useMemo(
+    () => buildInquiryOrderRows(filteredInquiryLogs, inquirySortMode),
+    [filteredInquiryLogs, inquirySortMode]
+  );
 
-      if (inquiryBrowseMode === "family") {
-        return log.familyName ?? "";
-      }
+  const selectedInquiryOrderLogs = useMemo(
+    () => filteredInquiryLogs.filter((log) => (log.orderName ?? "") === selectedInquiryOrder),
+    [filteredInquiryLogs, selectedInquiryOrder]
+  );
 
-      return log.species;
-    });
+  const inquirySpeciesRows = useMemo(
+    () => buildInquirySpeciesRows(selectedInquiryOrderLogs, inquirySortMode),
+    [inquirySortMode, selectedInquiryOrderLogs]
+  );
 
-    return [...new Set(values)].filter(Boolean).sort((left, right) => left.localeCompare(right, "ja-JP"));
-  }, [filteredInquiryLogs, inquiryBrowseMode]);
-
-  const inquirySpeciesPageSize = 10;
-  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquiryItemList.length / inquirySpeciesPageSize));
-  const paginatedInquirySpecies = inquiryItemList.slice(
-    (inquirySpeciesPage - 1) * inquirySpeciesPageSize,
-    inquirySpeciesPage * inquirySpeciesPageSize
+  const isInquiryOrderSelected = Boolean(selectedInquiryOrder);
+  const inquiryListPageSize = 10;
+  const inquiryListLength = isInquiryOrderSelected ? inquirySpeciesRows.length : inquiryOrderRows.length;
+  const totalInquirySpeciesPages = Math.max(1, Math.ceil(inquiryListLength / inquiryListPageSize));
+  const paginatedInquiryOrderRows = inquiryOrderRows.slice(
+    (inquirySpeciesPage - 1) * inquiryListPageSize,
+    inquirySpeciesPage * inquiryListPageSize
+  );
+  const paginatedInquirySpeciesRows = inquirySpeciesRows.slice(
+    (inquirySpeciesPage - 1) * inquiryListPageSize,
+    inquirySpeciesPage * inquiryListPageSize
   );
 
   const selectedInquirySpeciesLogs = useMemo(
     () =>
-      filteredInquiryLogs.filter((log) => {
-        if (inquiryBrowseMode === "order") {
-          return (log.orderName ?? "") === selectedInquirySpecies;
-        }
-
-        if (inquiryBrowseMode === "family") {
-          return (log.familyName ?? "") === selectedInquirySpecies;
-        }
-
-        return log.species === selectedInquirySpecies;
-      }),
-    [filteredInquiryLogs, inquiryBrowseMode, selectedInquirySpecies]
+      filteredInquiryLogs.filter(
+        (log) =>
+          log.species === selectedInquirySpecies &&
+          (!selectedInquiryOrder || (log.orderName ?? "") === selectedInquiryOrder)
+      ),
+    [filteredInquiryLogs, selectedInquiryOrder, selectedInquirySpecies]
   );
 
   const inquiryYearOptions = useMemo(
@@ -388,28 +394,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       return null;
     }
 
-    if (inquiryBrowseMode === "order") {
-      return {
-        orderName: selectedInquirySpecies,
-        familyName: "",
-        scientificName: ""
-      };
-    }
-
-    if (inquiryBrowseMode === "family") {
-      return {
-        orderName: firstLog.orderName ?? "",
-        familyName: selectedInquirySpecies,
-        scientificName: ""
-      };
-    }
-
     return {
       orderName: firstLog.orderName ?? "",
       familyName: firstLog.familyName ?? "",
       scientificName: firstLog.scientificName ?? ""
     };
-  }, [inquiryBrowseMode, selectedInquirySpecies, selectedInquirySpeciesLogs]);
+  }, [selectedInquirySpeciesLogs]);
 
   const inquiryLocationRows = useMemo(
     () => buildInquiryLocationRows(selectedInquiryYearLogs, isInquiryKureExpanded),
@@ -423,10 +413,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const inquiryDetailRows = useMemo(
     () => buildInquiryDetailRows(selectedInquiryYearLogs),
     [selectedInquiryYearLogs]
-  );
-  const inquiryDescendantSpeciesRows = useMemo(
-    () => buildInquiryDescendantSpeciesRows(selectedInquiryYearLogs, inquiryBrowseMode),
-    [inquiryBrowseMode, selectedInquiryYearLogs]
   );
   const monthlyOrderCountSeries = useMemo(() => buildMonthlyOrderCountSeries(logs), [logs]);
 
@@ -471,8 +457,16 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }, [rankingPeriod, rankingPeriodOptions]);
 
   useEffect(() => {
-    setSelectedInquirySpecies((current) => (current && inquiryItemList.includes(current) ? current : ""));
-  }, [inquiryItemList]);
+    setSelectedInquiryOrder((current) =>
+      current && inquiryOrderRows.some((row) => row.orderName === current) ? current : ""
+    );
+  }, [inquiryOrderRows]);
+
+  useEffect(() => {
+    setSelectedInquirySpecies((current) =>
+      current && filteredInquiryLogs.some((log) => log.species === current) ? current : ""
+    );
+  }, [filteredInquiryLogs]);
 
   useEffect(() => {
     setSelectedInquiryYear((current) =>
@@ -487,13 +481,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   useEffect(() => {
     setInquirySpeciesPage(1);
   }, [
-    inquiryBrowseMode,
+    inquirySortMode,
     inquirySearchDate,
     inquirySearchFamily,
     inquirySearchLocation,
     inquirySearchMode,
     inquirySearchOrder,
-    inquirySearchSpecies
+    inquirySearchSpecies,
+    selectedInquiryOrder
   ]);
 
   useEffect(() => {
@@ -1394,7 +1389,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <p className="section-label">Profile</p>
                 <h2>
                   {selectedInquirySpecies}
-                  {inquiryBrowseMode === "species" && selectedInquiryClassification?.scientificName ? (
+                  {selectedInquiryClassification?.scientificName ? (
                     <>
                       {" "}
                       <span className="scientific-name">({selectedInquiryClassification.scientificName})</span>
@@ -1488,55 +1483,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </tfoot>
               </table>
             </div>
-
-            {inquiryBrowseMode !== "species" ? (
-              <section className="inquiry-detail-block">
-                <div className="inquiry-panel-head">
-                  <div>
-                    <p className="section-label">Species</p>
-                    <h4>下位の種一覧</h4>
-                  </div>
-                  <p className="helper-text">
-                    {inquiryBrowseMode === "order"
-                      ? "この目に含まれる報告種を、科ごとに一覧できます。"
-                      : "この科に含まれる報告種を一覧できます。"}
-                  </p>
-                </div>
-
-                {inquiryDescendantSpeciesRows.length === 0 ? (
-                  <p className="helper-text">この年の下位種記録はありません。</p>
-                ) : (
-                  <div className="table-scroll">
-                    <table className="inquiry-table inquiry-detail-table">
-                      <thead>
-                        <tr>
-                          {inquiryBrowseMode === "order" ? <th>科名</th> : null}
-                          <th>種名</th>
-                          <th>件数</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {inquiryDescendantSpeciesRows.map((row) => (
-                          <tr key={row.key}>
-                            {inquiryBrowseMode === "order" ? <td>{row.familyName ? `${row.familyName}科` : "—"}</td> : null}
-                            <td>
-                              <strong>{row.species}</strong>
-                              {row.scientificName ? (
-                                <>
-                                  {" "}
-                                  <span className="scientific-name">({row.scientificName})</span>
-                                </>
-                              ) : null}
-                            </td>
-                            <td>{row.count}件</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            ) : null}
 
             <section className="inquiry-detail-block">
               <div className="inquiry-panel-head">
@@ -2327,16 +2273,20 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                 <div className="toolbar-row">
                   <label>
-                    表示単位
+                    並び順
                     <select
-                      value={inquiryBrowseMode}
-                      onChange={(event) => setInquiryBrowseMode(event.target.value as InquiryBrowseMode)}
+                      value={inquirySortMode}
+                      onChange={(event) => setInquirySortMode(event.target.value as InquirySortMode)}
                     >
-                      <option value="order">目名</option>
-                      <option value="family">科名</option>
-                      <option value="species">種名</option>
+                      <option value="name">あいうえお順</option>
+                      <option value="count">記録件数順</option>
                     </select>
                   </label>
+                  {selectedInquiryOrder ? (
+                    <button type="button" className="secondary-button" onClick={() => setSelectedInquiryOrder("")}>
+                      目一覧に戻る
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="secondary-button"
@@ -2444,54 +2394,72 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               {!isInquiryLoading ? (
                 <p className="helper-text">
-                  {filteredInquiryLogs.length}件の記録から、{inquiryItemList.length}
-                  {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示しています。
+                  {selectedInquiryOrder
+                    ? `${selectedInquiryOrder}目の${selectedInquiryOrderLogs.length}件の記録から、${inquirySpeciesRows.length}種類を表示しています。`
+                    : `${filteredInquiryLogs.length}件の記録から、${inquiryOrderRows.length}目を表示しています。`}
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquiryItemList.length === 0 ? (
+              {!isInquiryLoading && inquiryListLength === 0 ? (
                 <p className="helper-text">
                   {hasInquirySearch ? "検索条件に合う記録はありません。" : "照会できる観察記録がまだありません。"}
                 </p>
               ) : null}
 
-              {!isInquiryLoading && inquiryItemList.length > 0 ? (
+              {!isInquiryLoading && inquiryListLength > 0 ? (
                 <section className="inquiry-species-panel">
                   <div className="inquiry-panel-head">
                     <div>
                       <p className="section-label">List</p>
-                      <h3>{inquiryBrowseMode === "species" ? "種類一覧" : inquiryBrowseMode === "family" ? "科一覧" : "目一覧"}</h3>
+                      <h3>{selectedInquiryOrder ? `${selectedInquiryOrder}目の種一覧` : "目一覧"}</h3>
                     </div>
                     <p className="helper-text">
-                      50音順に並んでいます。
-                      {inquiryBrowseMode === "order"
-                        ? "目名を押すと、地域別の記録と種一覧が開きます。"
-                        : inquiryBrowseMode === "family"
-                          ? "科名を押すと、地域別の記録と種一覧が開きます。"
-                          : "種名を押すと詳細が開きます。"}
+                      {inquirySortMode === "name" ? "あいうえお順" : "記録件数順"}に並んでいます。
+                      {selectedInquiryOrder ? "種名を押すとプロフィールが開きます。" : "目名を押すと種一覧が開きます。"}
                     </p>
                   </div>
 
                   <div className="inquiry-species-rows">
-                    {paginatedInquirySpecies.map((species) => (
-                      <button
-                        key={species}
-                        type="button"
-                        className="inquiry-species-row"
-                        onClick={() => setSelectedInquirySpecies(species)}
-                      >
-                        <span>{species}</span>
-                        <span className="inquiry-row-arrow">›</span>
-                      </button>
-                    ))}
+                    {selectedInquiryOrder
+                      ? paginatedInquirySpeciesRows.map((row) => (
+                          <button
+                            key={row.key}
+                            type="button"
+                            className="inquiry-species-row"
+                            onClick={() => setSelectedInquirySpecies(row.species)}
+                          >
+                            <span>
+                              <strong>{row.species}</strong>
+                              {row.familyName ? <small> {row.familyName}科</small> : null}
+                              {row.scientificName ? (
+                                <>
+                                  {" "}
+                                  <span className="scientific-name">({row.scientificName})</span>
+                                </>
+                              ) : null}
+                            </span>
+                            <span>{row.count}件 ›</span>
+                          </button>
+                        ))
+                      : paginatedInquiryOrderRows.map((row) => (
+                          <button
+                            key={row.key}
+                            type="button"
+                            className="inquiry-species-row"
+                            onClick={() => setSelectedInquiryOrder(row.orderName)}
+                          >
+                            <span>{row.orderName}目</span>
+                            <span>{row.count}件 ›</span>
+                          </button>
+                        ))}
                   </div>
 
                   <div className="pagination-bar pagination-bar-bottom">
                     <p className="helper-text">
-                      {inquiryItemList.length}
-                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}中 {(inquirySpeciesPage - 1) * inquirySpeciesPageSize + 1}-
-                      {Math.min(inquirySpeciesPage * inquirySpeciesPageSize, inquiryItemList.length)}
-                      {inquiryBrowseMode === "species" ? "種類" : inquiryBrowseMode === "family" ? "科" : "目"}を表示
+                      {inquiryListLength}
+                      {selectedInquiryOrder ? "種類" : "目"}中 {(inquirySpeciesPage - 1) * inquiryListPageSize + 1}-
+                      {Math.min(inquirySpeciesPage * inquiryListPageSize, inquiryListLength)}
+                      {selectedInquiryOrder ? "種類" : "目"}を表示
                     </p>
                     <div className="pagination-actions logs-pagination-actions">
                       <button
@@ -3674,14 +3642,31 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
   });
 }
 
-function buildInquiryDescendantSpeciesRows(
-  logs: InquiryObservation[],
-  browseMode: InquiryBrowseMode
-): InquiryDescendantSpeciesRow[] {
-  if (browseMode === "species") {
-    return [];
+function buildInquiryOrderRows(logs: InquiryObservation[], sortMode: InquirySortMode): InquiryOrderRow[] {
+  const grouped = new Map<string, InquiryOrderRow>();
+
+  for (const log of logs) {
+    const orderName = (log.orderName ?? "").trim();
+    if (!orderName) {
+      continue;
+    }
+
+    const current =
+      grouped.get(orderName) ??
+      {
+        key: orderName,
+        orderName,
+        count: 0
+      };
+
+    current.count += 1;
+    grouped.set(orderName, current);
   }
 
+  return sortInquiryRows([...grouped.values()], sortMode, (row) => row.orderName);
+}
+
+function buildInquirySpeciesRows(logs: InquiryObservation[], sortMode: InquirySortMode): InquiryDescendantSpeciesRow[] {
   const grouped = new Map<string, InquiryDescendantSpeciesRow>();
 
   for (const log of logs) {
@@ -3702,20 +3687,20 @@ function buildInquiryDescendantSpeciesRows(
     grouped.set(key, current);
   }
 
-  return [...grouped.values()].sort((left, right) => {
-    if (browseMode === "order") {
-      const familyComparison = left.familyName.localeCompare(right.familyName, "ja-JP");
-      if (familyComparison !== 0) {
-        return familyComparison;
-      }
+  return sortInquiryRows([...grouped.values()], sortMode, (row) => row.species);
+}
+
+function sortInquiryRows<T extends { count: number }>(
+  rows: T[],
+  sortMode: InquirySortMode,
+  getLabel: (row: T) => string
+) {
+  return rows.sort((left, right) => {
+    if (sortMode === "count" && right.count !== left.count) {
+      return right.count - left.count;
     }
 
-    const countComparison = right.count - left.count;
-    if (countComparison !== 0) {
-      return countComparison;
-    }
-
-    return left.species.localeCompare(right.species, "ja-JP");
+    return getLabel(left).localeCompare(getLabel(right), "ja-JP");
   });
 }
 
