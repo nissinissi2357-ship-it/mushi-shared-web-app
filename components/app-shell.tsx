@@ -126,9 +126,9 @@ function toDateInputValue(dateLike: string | Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-function getDefaultObservationDraft(): DraftObservation {
+function getDefaultObservationDraft(observedAt = toLocalInputValue()): DraftObservation {
   return {
-    observedAt: toLocalInputValue(),
+    observedAt,
     location: "",
     locationDetail: "",
     latitude: "",
@@ -729,6 +729,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   function applyParsedToDraft(rawText: string) {
     const parsed = parseCaptainMessage(rawText);
     const mergedClassification = mergeSpeciesClassification(parsed.species || "", draft);
+    const parsedPoints = parsed.points !== null ? String(parsed.points) : "0";
 
     setDraft((current) => ({
       observedAt: parsed.observedAt || current.observedAt,
@@ -740,7 +741,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       familyName: mergedClassification.familyName,
       species: parsed.species || current.species,
       scientificName: mergedClassification.scientificName,
-      points: parsed.points !== null ? String(parsed.points) : current.points,
+      points: parsedPoints,
       scoringMemo: parsed.scoringMemo || current.scoringMemo
     }));
 
@@ -750,7 +751,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       foundClassification?.orderName ? `目: ${foundClassification.orderName}` : "",
       foundClassification?.familyName ? `科: ${foundClassification.familyName}` : "",
       foundClassification?.scientificName ? `学名: ${foundClassification.scientificName}` : "",
-      parsed.points !== null ? `ポイント: ${parsed.points}P` : "",
+      `ポイント: ${parsedPoints}P`,
       parsed.location ? `観察地域: ${parsed.location}` : "",
       parsed.observedAt ? `日時: ${parsed.observedAt}` : ""
     ].filter(Boolean);
@@ -1065,7 +1066,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     }
 
     const viewer = await refreshViewerState();
-    setDraft(getDefaultObservationDraft());
+    setDraft(getDefaultObservationDraft(nextDraft.observedAt));
     setLinePaste("");
     setParseStatus(defaultParseStatus);
     setStatusMessage("観察ログを保存しました。");
@@ -1114,14 +1115,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       familyName: mergeSpeciesClassification(parsed.species || draft.species, draft).familyName,
       species: parsed.species || draft.species,
       scientificName: mergeSpeciesClassification(parsed.species || draft.species, draft).scientificName,
-      points: parsed.points !== null ? String(parsed.points) : draft.points,
+      points: parsed.points !== null ? String(parsed.points) : "0",
       scoringMemo: parsed.scoringMemo || draft.scoringMemo
     };
 
     const missing = [
       !nextDraft.species ? "種名" : "",
-      !nextDraft.location ? "観察地域" : "",
-      !nextDraft.points ? "ポイント" : ""
+      !nextDraft.location ? "観察地域" : ""
     ].filter(Boolean);
 
     if (missing.length > 0) {
