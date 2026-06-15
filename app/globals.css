@@ -605,6 +605,27 @@ select {
   font-size: 0.92rem;
 }
 
+.occurrence-table {
+  min-width: 1080px;
+}
+
+.occurrence-table th,
+.occurrence-table td {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.occurrence-table th:first-child,
+.occurrence-table td:first-child,
+.occurrence-table th:nth-child(2),
+.occurrence-table td:nth-child(2) {
+  text-align: left;
+}
+
+.occurrence-table-scroll {
+  max-height: 520px;
+}
+
 .inquiry-table tbody tr:last-child td {
   border-bottom: none;
 }

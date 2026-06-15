@@ -38,6 +38,8 @@ const utilityTabs: Array<{ id: TabId; label: string }> = [
   { id: "members", label: "隊員管理" }
 ];
 
+const monthLabels = Array.from({ length: 12 }, (_, index) => `${index + 1}月`);
+
 type AppShellProps = {
   initialMembers: Member[];
   source: "supabase" | "fallback";
@@ -113,6 +115,14 @@ type InquiryOrderRow = {
   key: string;
   orderName: string;
   count: number;
+};
+
+type InquiryOccurrenceRow = {
+  key: string;
+  species: string;
+  location: string;
+  monthCounts: number[];
+  totalCount: number;
 };
 
 type InquirySortMode = "name" | "count";
@@ -336,6 +346,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   const inquiryOrderRows = useMemo(
     () => buildInquiryOrderRows(filteredInquiryLogs, inquirySortMode),
+    [filteredInquiryLogs, inquirySortMode]
+  );
+
+  const inquiryOccurrenceRows = useMemo(
+    () => buildInquiryOccurrenceRows(filteredInquiryLogs, inquirySortMode),
     [filteredInquiryLogs, inquirySortMode]
   );
 
@@ -675,6 +690,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     } finally {
       setIsExporting(false);
     }
+  }
+
+  function handleExportOccurrenceTable() {
+    const header = ["種", "地域", ...monthLabels, "合計"];
+    const rows = inquiryOccurrenceRows.map((row) => [
+      row.species,
+      row.location,
+      ...row.monthCounts.map((count) => String(count)),
+      String(row.totalCount)
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(formatCsvCell).join(",")).join("\r\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `mushi-occurrence-counts-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(objectUrl);
+    setStatusMessage("出現数表をCSVで出力しました。");
   }
 
   async function handleImportLogs(event: ChangeEvent<HTMLInputElement>) {
@@ -2406,6 +2442,55 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </p>
               ) : null}
 
+              {!isInquiryLoading && inquiryOccurrenceRows.length > 0 ? (
+                <section className="inquiry-detail-block">
+                  <div className="inquiry-panel-head">
+                    <div>
+                      <p className="section-label">Occurrence</p>
+                      <h3>出現数表</h3>
+                    </div>
+                    <div className="inline-actions">
+                      <p className="helper-text">検索条件に合う記録を、種・地域・月別の出現数で集計しています。</p>
+                      <button type="button" className="secondary-button" onClick={handleExportOccurrenceTable}>
+                        CSV出力
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="table-scroll occurrence-table-scroll">
+                    <table className="inquiry-table occurrence-table">
+                      <thead>
+                        <tr>
+                          <th>種</th>
+                          <th>地域</th>
+                          {monthLabels.map((label) => (
+                            <th key={label}>{label}</th>
+                          ))}
+                          <th>合計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inquiryOccurrenceRows.map((row) => (
+                          <tr key={row.key}>
+                            <th>{row.species}</th>
+                            <td>{row.location}</td>
+                            {row.monthCounts.map((count, index) => (
+                              <td
+                                key={`${row.key}-${index + 1}`}
+                                className={count > 0 ? "inquiry-month-cell inquiry-month-cell-active" : "inquiry-month-cell"}
+                              >
+                                {count > 0 ? count : ""}
+                              </td>
+                            ))}
+                            <td className="inquiry-total-cell">{row.totalCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ) : null}
+
               {!isInquiryLoading && inquiryListLength > 0 ? (
                 <section className="inquiry-species-panel">
                   <div className="inquiry-panel-head">
@@ -3326,6 +3411,10 @@ function formatObservationLocation(location: string, locationDetail?: string | n
   return detail ? `${location} / ${detail}` : location;
 }
 
+function formatCsvCell(value: string) {
+  return `"${value.replace(/"/g, "\"\"")}"`;
+}
+
 function formatTaxonomyLabel(orderName?: string | null, familyName?: string | null) {
   const orderLabel = orderName ? `${orderName}目` : "";
   const familyLabel = familyName ? `${familyName}科` : "";
@@ -3639,6 +3728,46 @@ function buildInquiryDetailRows(logs: InquiryObservation[]): InquiryDetailRow[] 
     }
 
     return left.locationDetail.localeCompare(right.locationDetail, "ja-JP");
+  });
+}
+
+function buildInquiryOccurrenceRows(logs: InquiryObservation[], sortMode: InquirySortMode): InquiryOccurrenceRow[] {
+  const grouped = new Map<string, InquiryOccurrenceRow>();
+
+  for (const log of logs) {
+    const species = log.species.trim() || "未設定";
+    const location = log.location.trim() || "未設定";
+    const key = `${species}||${location}`;
+    const current =
+      grouped.get(key) ??
+      {
+        key,
+        species,
+        location,
+        monthCounts: Array.from({ length: 12 }, () => 0),
+        totalCount: 0
+      };
+    const monthIndex = new Date(log.observedAt).getMonth();
+
+    if (monthIndex >= 0 && monthIndex < 12) {
+      current.monthCounts[monthIndex] += 1;
+      current.totalCount += 1;
+    }
+
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()].sort((left, right) => {
+    if (sortMode === "count" && right.totalCount !== left.totalCount) {
+      return right.totalCount - left.totalCount;
+    }
+
+    const speciesComparison = left.species.localeCompare(right.species, "ja-JP");
+    if (speciesComparison !== 0) {
+      return speciesComparison;
+    }
+
+    return left.location.localeCompare(right.location, "ja-JP");
   });
 }
 
