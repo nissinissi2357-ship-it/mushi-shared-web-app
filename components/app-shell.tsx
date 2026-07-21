@@ -207,7 +207,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
-  const isMemberManagerUnlocked = currentMember?.role === "admin";
+  const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
+  const [adminLoginMemberId, setAdminLoginMemberId] = useState("");
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
@@ -823,6 +824,63 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     }
   }
 
+  async function handleAdminLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const targetId = adminLoginMemberId || selectedMemberId || members[0]?.id || "";
+    const target = members.find((member) => member.id === targetId);
+    if (!target) {
+      setStatusMessage("先にアカウントを選んでください。");
+      return;
+    }
+
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          displayName: target.displayName,
+          passcode: loginPasscode
+        })
+      });
+
+      const payload = (await response.json()) as LoginResult | { error?: string };
+      if (!response.ok || !("member" in payload)) {
+        throw new Error("error" in payload && payload.error ? payload.error : "ログインに失敗しました。");
+      }
+
+      if (payload.member.role !== "admin") {
+        await fetch("/api/auth/logout", { method: "POST" });
+        throw new Error("この隊員には Admin 権限がありません。");
+      }
+
+      setCurrentMember(payload.member);
+      setIsMemberManagerUnlocked(true);
+      setLoginPasscode("");
+      setStatusMessage("Admin としてログインしました。");
+    } catch (error) {
+      setIsMemberManagerUnlocked(false);
+      setStatusMessage(error instanceof Error ? error.message : "ログインに失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
+    }
+  }
+
+  async function handleAdminLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setIsMemberManagerUnlocked(false);
+      setLoginPasscode("");
+      setStatusMessage("隊員管理からログアウトしました。");
+    }
+  }
+
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsRegistering(true);
@@ -1342,9 +1400,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </button>
               {isAppMenuOpen ? (
                 <div className="card-menu-popup app-menu-popup">
-                  {utilityTabs
-                    .filter((tab) => tab.id !== "members" || currentMember?.role === "admin")
-                    .map((tab) => (
+                  {utilityTabs.map((tab) => (
                     <button key={tab.id} type="button" className="secondary-button" onClick={() => handleSelectTab(tab.id)}>
                       {tab.label}
                     </button>
@@ -2625,19 +2681,50 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <h2>隊員管理</h2>
                   <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の初期化、削除ができます。</p>
                 </div>
+
+                {isMemberManagerUnlocked ? (
+                  <button type="button" className="ghost-button" onClick={handleAdminLogout}>
+                    ログアウト
+                  </button>
+                ) : null}
               </div>
 
               {!isMemberManagerUnlocked ? (
-                <div className="record-form">
-                  <p className="helper-text full-width">
-                    隊員管理は Admin アカウントでログインした人だけが使えます。
-                  </p>
+                <form className="record-form" onSubmit={handleAdminLogin}>
+                  <label>
+                    アカウント
+                    <select
+                      value={adminLoginMemberId || selectedMemberId || members[0]?.id || ""}
+                      onChange={(event) => setAdminLoginMemberId(event.target.value)}
+                    >
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    合言葉
+                    <input
+                      type="password"
+                      placeholder="Admin の合言葉"
+                      value={loginPasscode}
+                      onChange={(event) => setLoginPasscode(event.target.value)}
+                    />
+                  </label>
+
                   <div className="form-actions full-width">
-                    <button type="button" className="primary-button" onClick={() => setIsAuthPanelOpen(true)}>
-                      ログインする
+                    <button type="submit" className="primary-button" disabled={isAdminSaving || members.length === 0}>
+                      {isAdminSaving ? "確認中..." : "ログイン"}
                     </button>
                   </div>
-                </div>
+
+                  <p className="helper-text full-width">
+                    Admin の合言葉を入力すると、隊員管理を開けます。
+                  </p>
+                </form>
               ) : (
                 <>
                   <form className="record-form" onSubmit={handleAdminCreate}>
