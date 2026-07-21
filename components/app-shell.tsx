@@ -208,7 +208,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
   const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
-  const [adminLoginMemberId, setAdminLoginMemberId] = useState("");
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
@@ -827,36 +826,21 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   async function handleAdminLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const targetId = adminLoginMemberId || selectedMemberId || members[0]?.id || "";
-    const target = members.find((member) => member.id === targetId);
-    if (!target) {
-      setStatusMessage("先にアカウントを選んでください。");
-      return;
-    }
-
     setIsAdminSaving(true);
     setStatusMessage(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          displayName: target.displayName,
-          passcode: loginPasscode
-        })
+        body: JSON.stringify({ passcode: loginPasscode })
       });
 
       const payload = (await response.json()) as LoginResult | { error?: string };
       if (!response.ok || !("member" in payload)) {
         throw new Error("error" in payload && payload.error ? payload.error : "ログインに失敗しました。");
-      }
-
-      if (payload.member.role !== "admin") {
-        await fetch("/api/auth/logout", { method: "POST" });
-        throw new Error("この隊員には Admin 権限がありません。");
       }
 
       setCurrentMember(payload.member);
@@ -2692,20 +2676,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               {!isMemberManagerUnlocked ? (
                 <form className="record-form" onSubmit={handleAdminLogin}>
                   <label>
-                    アカウント
-                    <select
-                      value={adminLoginMemberId || selectedMemberId || members[0]?.id || ""}
-                      onChange={(event) => setAdminLoginMemberId(event.target.value)}
-                    >
-                      {members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
                     合言葉
                     <input
                       type="password"
@@ -2716,7 +2686,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   </label>
 
                   <div className="form-actions full-width">
-                    <button type="submit" className="primary-button" disabled={isAdminSaving || members.length === 0}>
+                    <button type="submit" className="primary-button" disabled={isAdminSaving}>
                       {isAdminSaving ? "確認中..." : "ログイン"}
                     </button>
                   </div>
