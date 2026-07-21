@@ -9,10 +9,12 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { MemberProfileDialog } from "@/components/member-profile";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
+import { buildMemberProfile } from "@/lib/profile";
 import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
@@ -210,6 +212,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isAdminSaving, setIsAdminSaving] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
+  const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
@@ -246,6 +249,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const canViewRanking = true;
   const currentYear = new Date().getFullYear();
+
+  const profileMember = profileMemberId
+    ? members.find((member) => member.id === profileMemberId) ?? null
+    : null;
+  const memberProfile = useMemo(
+    () => (profileMember ? buildMemberProfile(profileMember, logs, pointEntries) : null),
+    [profileMember, logs, pointEntries]
+  );
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
 
@@ -1434,6 +1445,18 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
       </header>
 
+      {memberProfile ? (
+        <MemberProfileDialog
+          profile={memberProfile}
+          onClose={() => setProfileMemberId(null)}
+          onViewLogs={() => {
+            setLogMemberFilterId(memberProfile.member.id);
+            setProfileMemberId(null);
+            setActiveTab("logs");
+          }}
+        />
+      ) : null}
+
       {selectedInquirySpecies ? (
         <div className="alert-overlay" onClick={() => setSelectedInquirySpecies("")}>
           <section className="alert-panel inquiry-dialog" onClick={(event) => event.stopPropagation()}>
@@ -1631,10 +1654,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <article
                     key={`${rankingPeriod}-${summary.memberId}`}
                     className="ranking-item"
-                    onClick={() => {
-                      setLogMemberFilterId(summary.memberId);
-                      setActiveTab("logs");
-                    }}
+                    onClick={() => setProfileMemberId(summary.memberId)}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="ranking-rank">{index + 1}</span>
