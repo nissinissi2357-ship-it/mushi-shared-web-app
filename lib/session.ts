@@ -85,10 +85,13 @@ function verifySession(raw: string): SessionPayload | null {
 }
 
 function getSessionSecret(): string {
-  return (
-    process.env.APP_SESSION_SECRET ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    "local-dev-secret"
-  );
+  if (process.env.APP_SESSION_SECRET) {
+    return process.env.APP_SESSION_SECRET;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("APP_SESSION_SECRET が設定されていません。");
+  }
+
+  return "local-dev-secret";
 }

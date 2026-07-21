@@ -269,6 +269,34 @@ export async function loginMember(displayName: string, passcode: string): Promis
   }
 }
 
+export async function loginAdminByPasscode(passcode: string): Promise<LoginResult> {
+  const normalizedPasscode = passcode.trim();
+
+  if (!normalizedPasscode) {
+    throw new Error("合言葉を入力してください。");
+  }
+
+  const supabase = createAdminClient();
+  const hashedPasscode = hashPasscode(normalizedPasscode);
+
+  const { data, error } = await supabase
+    .from("club_members")
+    .select("id, display_name, role, passcode_hash")
+    .eq("role", "admin")
+    .eq("passcode_hash", hashedPasscode);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as ClubMemberRow[];
+  if (rows.length === 0) {
+    throw new Error("合言葉が違います。");
+  }
+
+  return buildViewer(mapMemberRow(rows[0]));
+}
+
 export async function createMember(
   displayName: string,
   passcode: string,

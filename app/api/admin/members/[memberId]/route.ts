@@ -2,15 +2,21 @@ import { NextResponse } from "next/server";
 import {
   adminDeleteMember,
   adminResetMemberPasscode,
-  adminUpdateMemberRole
+  adminUpdateMemberRole,
+  getViewerFromSession
 } from "@/lib/data";
+import { readSession } from "@/lib/session";
 import type { MemberRole } from "@/lib/types";
 
-const MEMBER_MANAGEMENT_PASSCODE = "0000";
-const PUBLIC_ADMIN_ACTOR_ID = "public-viewer";
+async function requireAdminViewer() {
+  const session = await readSession();
+  const viewer = await getViewerFromSession(session);
 
-function hasValidPasscode(value: string) {
-  return value.trim() === MEMBER_MANAGEMENT_PASSCODE;
+  if (!viewer || viewer.member.role !== "admin") {
+    return null;
+  }
+
+  return viewer;
 }
 
 export async function PATCH(
@@ -18,14 +24,14 @@ export async function PATCH(
   context: { params: Promise<{ memberId: string }> }
 ) {
   try {
+    const viewer = await requireAdminViewer();
+    if (!viewer) {
+      return NextResponse.json({ error: "Admin アカウントでログインしてください。" }, { status: 403 });
+    }
+
     const { memberId } = await context.params;
     const body = await request.json();
-    const adminPasscode = String(body.adminPasscode || "").trim();
     const action = String(body.action || "");
-
-    if (!hasValidPasscode(adminPasscode)) {
-      return NextResponse.json({ error: "隊員管理のパスワードが違います。" }, { status: 403 });
-    }
 
     if (action === "reset-passcode") {
       await adminResetMemberPasscode(memberId);
@@ -34,7 +40,7 @@ export async function PATCH(
 
     if (action === "update-role") {
       const role = String(body.role || "member") as MemberRole;
-      const member = await adminUpdateMemberRole(PUBLIC_ADMIN_ACTOR_ID, memberId, role);
+      const member = await adminUpdateMemberRole(viewer.member.id, memberId, role);
       return NextResponse.json({ member });
     }
 
@@ -52,15 +58,14 @@ export async function DELETE(
   context: { params: Promise<{ memberId: string }> }
 ) {
   try {
-    const { memberId } = await context.params;
-    const body = await request.json().catch(() => ({}));
-    const adminPasscode = String(body.adminPasscode || "").trim();
-
-    if (!hasValidPasscode(adminPasscode)) {
-      return NextResponse.json({ error: "隊員管理のパスワードが違います。" }, { status: 403 });
+    const viewer = await requireAdminViewer();
+    if (!viewer) {
+      return NextResponse.json({ error: "Admin アカウントでログインしてください。" }, { status: 403 });
     }
 
-    await adminDeleteMember(PUBLIC_ADMIN_ACTOR_ID, memberId);
+    const { memberId } = await context.params;
+
+    await adminDeleteMember(viewer.member.id, memberId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

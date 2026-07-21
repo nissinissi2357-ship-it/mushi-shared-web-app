@@ -217,7 +217,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
-  const [memberManagerPasscode, setMemberManagerPasscode] = useState("");
   const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
@@ -861,6 +860,48 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     }
   }
 
+  async function handleAdminLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setIsAdminSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ passcode: loginPasscode })
+      });
+
+      const payload = (await response.json()) as LoginResult | { error?: string };
+      if (!response.ok || !("member" in payload)) {
+        throw new Error("error" in payload && payload.error ? payload.error : "ログインに失敗しました。");
+      }
+
+      setCurrentMember(payload.member);
+      setIsMemberManagerUnlocked(true);
+      setLoginPasscode("");
+      setStatusMessage("Admin としてログインしました。");
+    } catch (error) {
+      setIsMemberManagerUnlocked(false);
+      setStatusMessage(error instanceof Error ? error.message : "ログインに失敗しました。");
+    } finally {
+      setIsAdminSaving(false);
+    }
+  }
+
+  async function handleAdminLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setIsMemberManagerUnlocked(false);
+      setLoginPasscode("");
+      setStatusMessage("隊員管理からログアウトしました。");
+    }
+  }
+
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsRegistering(true);
@@ -929,8 +970,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleAdminCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -943,10 +984,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          ...adminCreateDraft,
-          adminPasscode: memberManagerPasscode
-        })
+        body: JSON.stringify(adminCreateDraft)
       });
 
       const payload = (await response.json()) as { member?: Member; error?: string };
@@ -965,8 +1003,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminRoleUpdate(memberId: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -980,7 +1018,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          adminPasscode: memberManagerPasscode,
           action: "update-role",
           role: adminRoleDrafts[memberId]
         })
@@ -1001,8 +1038,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminResetPasscode(memberId: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -1016,7 +1053,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          adminPasscode: memberManagerPasscode,
           action: "reset-passcode"
         })
       });
@@ -1036,8 +1072,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminDelete(memberId: string, displayName: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -1051,13 +1087,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       const response = await fetch(`/api/admin/members/${memberId}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          adminPasscode: memberManagerPasscode
-        })
+        method: "DELETE"
       });
 
       const payload = (await response.json()) as { error?: string };
@@ -1360,19 +1390,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   function canManageMemberData(memberId: string) {
     return Boolean(memberId);
-  }
-
-  function handleUnlockMemberManager(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (memberManagerPasscode.trim() !== "0000") {
-      setIsMemberManagerUnlocked(false);
-      setStatusMessage("隊員管理のパスワードが違います。");
-      return;
-    }
-
-    setIsMemberManagerUnlocked(true);
-    setStatusMessage("隊員管理を開きました。");
   }
 
   function handleSelectTab(tabId: TabId) {
@@ -2735,39 +2752,33 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </div>
 
                 {isMemberManagerUnlocked ? (
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => {
-                      setIsMemberManagerUnlocked(false);
-                      setStatusMessage("隊員管理を閉じました。");
-                    }}
-                  >
-                    閉じる
+                  <button type="button" className="ghost-button" onClick={handleAdminLogout}>
+                    ログアウト
                   </button>
                 ) : null}
               </div>
 
               {!isMemberManagerUnlocked ? (
-                <form className="record-form" onSubmit={handleUnlockMemberManager}>
+                <form className="record-form" onSubmit={handleAdminLogin}>
                   <label>
-                    管理パスワード
+                    合言葉
                     <input
                       type="password"
-                      inputMode="numeric"
-                      placeholder="管理用の合言葉を入力"
-                      value={memberManagerPasscode}
-                      onChange={(event) => setMemberManagerPasscode(event.target.value)}
+                      placeholder="Admin の合言葉"
+                      value={loginPasscode}
+                      onChange={(event) => setLoginPasscode(event.target.value)}
                     />
                   </label>
 
                   <div className="form-actions full-width">
-                    <button type="submit" className="primary-button">
-                      入る
+                    <button type="submit" className="primary-button" disabled={isAdminSaving}>
+                      {isAdminSaving ? "確認中..." : "ログイン"}
                     </button>
                   </div>
 
-                  <p className="helper-text full-width">管理用の合言葉を入力すると、隊員管理を開けます。</p>
+                  <p className="helper-text full-width">
+                    Admin の合言葉を入力すると、隊員管理を開けます。
+                  </p>
                 </form>
               ) : (
                 <>
