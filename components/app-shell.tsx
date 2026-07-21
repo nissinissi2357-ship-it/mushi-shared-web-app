@@ -207,8 +207,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isLogDataMenuOpen, setIsLogDataMenuOpen] = useState(false);
   const [isInquirySearchOpen, setIsInquirySearchOpen] = useState(false);
   const [loginWarningMessage, setLoginWarningMessage] = useState<string | null>(null);
-  const [memberManagerPasscode, setMemberManagerPasscode] = useState("");
-  const [isMemberManagerUnlocked, setIsMemberManagerUnlocked] = useState(false);
+  const isMemberManagerUnlocked = currentMember?.role === "admin";
   const [logSearchMode, setLogSearchMode] = useState<"and" | "or">("and");
   const [logSearchSpecies, setLogSearchSpecies] = useState("");
   const [logSearchLocation, setLogSearchLocation] = useState("");
@@ -892,8 +891,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   async function handleAdminCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -906,10 +905,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          ...adminCreateDraft,
-          adminPasscode: memberManagerPasscode
-        })
+        body: JSON.stringify(adminCreateDraft)
       });
 
       const payload = (await response.json()) as { member?: Member; error?: string };
@@ -928,8 +924,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminRoleUpdate(memberId: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -943,7 +939,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          adminPasscode: memberManagerPasscode,
           action: "update-role",
           role: adminRoleDrafts[memberId]
         })
@@ -964,8 +959,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminResetPasscode(memberId: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -979,7 +974,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          adminPasscode: memberManagerPasscode,
           action: "reset-passcode"
         })
       });
@@ -999,8 +993,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   }
 
   async function handleAdminDelete(memberId: string, displayName: string) {
-    if (!isMemberManagerUnlocked || memberManagerPasscode.trim() !== "0000") {
-      setStatusMessage("先に隊員管理のパスワードを入力してください。");
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
       return;
     }
 
@@ -1014,13 +1008,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       const response = await fetch(`/api/admin/members/${memberId}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          adminPasscode: memberManagerPasscode
-        })
+        method: "DELETE"
       });
 
       const payload = (await response.json()) as { error?: string };
@@ -1326,19 +1314,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return Boolean(memberId);
   }
 
-  function handleUnlockMemberManager(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (memberManagerPasscode.trim() !== "0000") {
-      setIsMemberManagerUnlocked(false);
-      setStatusMessage("隊員管理のパスワードが違います。");
-      return;
-    }
-
-    setIsMemberManagerUnlocked(true);
-    setStatusMessage("隊員管理を開きました。");
-  }
-
   function handleSelectTab(tabId: TabId) {
     setActiveTab(tabId);
     setIsAppMenuOpen(false);
@@ -1367,7 +1342,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </button>
               {isAppMenuOpen ? (
                 <div className="card-menu-popup app-menu-popup">
-                  {utilityTabs.map((tab) => (
+                  {utilityTabs
+                    .filter((tab) => tab.id !== "members" || currentMember?.role === "admin")
+                    .map((tab) => (
                     <button key={tab.id} type="button" className="secondary-button" onClick={() => handleSelectTab(tab.id)}>
                       {tab.label}
                     </button>
@@ -2648,42 +2625,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <h2>隊員管理</h2>
                   <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の初期化、削除ができます。</p>
                 </div>
-
-                {isMemberManagerUnlocked ? (
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => {
-                      setIsMemberManagerUnlocked(false);
-                      setStatusMessage("隊員管理を閉じました。");
-                    }}
-                  >
-                    閉じる
-                  </button>
-                ) : null}
               </div>
 
               {!isMemberManagerUnlocked ? (
-                <form className="record-form" onSubmit={handleUnlockMemberManager}>
-                  <label>
-                    管理パスワード
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      placeholder="管理用の合言葉を入力"
-                      value={memberManagerPasscode}
-                      onChange={(event) => setMemberManagerPasscode(event.target.value)}
-                    />
-                  </label>
-
+                <div className="record-form">
+                  <p className="helper-text full-width">
+                    隊員管理は Admin アカウントでログインした人だけが使えます。
+                  </p>
                   <div className="form-actions full-width">
-                    <button type="submit" className="primary-button">
-                      入る
+                    <button type="button" className="primary-button" onClick={() => setIsAuthPanelOpen(true)}>
+                      ログインする
                     </button>
                   </div>
-
-                  <p className="helper-text full-width">管理用の合言葉を入力すると、隊員管理を開けます。</p>
-                </form>
+                </div>
               ) : (
                 <>
                   <form className="record-form" onSubmit={handleAdminCreate}>
