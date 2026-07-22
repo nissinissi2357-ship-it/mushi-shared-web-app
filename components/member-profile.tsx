@@ -26,7 +26,7 @@ function ChoroplethMap({
   max,
   ariaLabel
 }: {
-  paths: { name: string; d: string }[];
+  paths: { name: string; d: string; transform?: string }[];
   viewBox: { width: number; height: number };
   counts: Record<string, number>;
   max: number;
@@ -45,6 +45,7 @@ function ChoroplethMap({
           <path
             key={region.name}
             d={region.d}
+            transform={region.transform}
             fill={regionFill(count, max)}
             className="profile-map-region"
           >
