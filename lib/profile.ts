@@ -34,6 +34,34 @@ function resolveMunicipality(location: string): string | null {
   return APP_LOCATION_TO_MUNICIPALITY[location] ?? null;
 }
 
+// 呉市内の詳細地図(ユーザー作成SVG)の区分。観察記録の「呉市◯◯」の◯◯部分。
+const KURE_SUBLOCATIONS = new Set([
+  "旧呉市",
+  "天応吉浦",
+  "焼山",
+  "灰ヶ峰",
+  "広阿賀",
+  "仁方",
+  "野呂山",
+  "川尻",
+  "安浦",
+  "郷原",
+  "音戸",
+  "倉橋",
+  "下蒲刈",
+  "上蒲刈",
+  "豊島",
+  "大崎下島"
+]);
+
+function resolveKureSublocation(location: string): string | null {
+  if (!location.startsWith("呉市")) {
+    return null;
+  }
+  const sublocation = location.slice(2);
+  return KURE_SUBLOCATIONS.has(sublocation) ? sublocation : null;
+}
+
 export type ProfileCount = { label: string; count: number };
 
 export type MemberProfile = {
@@ -46,6 +74,8 @@ export type MemberProfile = {
   topOrders: ProfileCount[];
   municipalityCounts: Record<string, number>;
   municipalityMax: number;
+  kureSublocationCounts: Record<string, number>;
+  kureSublocationMax: number;
 };
 
 function toMonthKey(dateLike: string | Date): string {
@@ -92,6 +122,7 @@ export function buildMemberProfile(
   const locationCounts = new Map<string, number>();
   const orderCounts = new Map<string, number>();
   const municipalityCounts: Record<string, number> = {};
+  const kureSublocationCounts: Record<string, number> = {};
 
   for (const log of memberLogs) {
     const location = (log.location || "").trim() || "地域未設定";
@@ -104,9 +135,15 @@ export function buildMemberProfile(
     if (municipality) {
       municipalityCounts[municipality] = (municipalityCounts[municipality] ?? 0) + 1;
     }
+
+    const kureSublocation = resolveKureSublocation(location);
+    if (kureSublocation) {
+      kureSublocationCounts[kureSublocation] = (kureSublocationCounts[kureSublocation] ?? 0) + 1;
+    }
   }
 
   const municipalityMax = Object.values(municipalityCounts).reduce((max, value) => Math.max(max, value), 0);
+  const kureSublocationMax = Object.values(kureSublocationCounts).reduce((max, value) => Math.max(max, value), 0);
 
   return {
     member,
@@ -117,6 +154,8 @@ export function buildMemberProfile(
     topLocations: rankCounts(locationCounts, 5),
     topOrders: rankCounts(orderCounts, 5),
     municipalityCounts,
-    municipalityMax
+    municipalityMax,
+    kureSublocationCounts,
+    kureSublocationMax
   };
 }

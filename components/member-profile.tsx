@@ -2,6 +2,7 @@ import {
   HIROSHIMA_MAP_VIEWBOX,
   HIROSHIMA_MUNICIPALITY_PATHS
 } from "@/lib/hiroshima-map-paths";
+import { KURE_MAP_PATHS, KURE_MAP_VIEWBOX } from "@/lib/kure-map-paths";
 import type { MemberProfile } from "@/lib/profile";
 
 // 件数の多寡を緑の濃淡へ変換する。0件は淡い中間色、多いほど濃い緑。
@@ -18,33 +19,37 @@ function regionFill(count: number, max: number): string {
   return `rgb(${mix(light.r, dark.r)}, ${mix(light.g, dark.g)}, ${mix(light.b, dark.b)})`;
 }
 
-function HiroshimaMap({
+function ChoroplethMap({
+  paths,
+  viewBox,
   counts,
-  max
+  max,
+  ariaLabel
 }: {
+  paths: { name: string; d: string }[];
+  viewBox: { width: number; height: number };
   counts: Record<string, number>;
   max: number;
+  ariaLabel: string;
 }) {
-  const { width, height } = HIROSHIMA_MAP_VIEWBOX;
-
   return (
     <svg
       className="profile-map"
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={`0 0 ${viewBox.width} ${viewBox.height}`}
       role="img"
-      aria-label="観察地域の分布地図（広島県・市町村別）"
+      aria-label={ariaLabel}
     >
-      {HIROSHIMA_MUNICIPALITY_PATHS.map((municipality) => {
-        const count = counts[municipality.name] ?? 0;
+      {paths.map((region) => {
+        const count = counts[region.name] ?? 0;
         return (
           <path
-            key={municipality.name}
-            d={municipality.d}
+            key={region.name}
+            d={region.d}
             fill={regionFill(count, max)}
             className="profile-map-region"
           >
             <title>
-              {municipality.name}: {count}件
+              {region.name}: {count}件
             </title>
           </path>
         );
@@ -156,20 +161,49 @@ export function MemberProfileDialog({
 
         <div className="profile-section">
           <div className="profile-section-head">
-            <h3>観察地域の分布</h3>
+            <h3>観察地域の分布（広島県）</h3>
             <p className="helper-text">
-              広島県内の市町村を、観察件数が多いほど濃い色で表示します。呉市内の内訳は下のベスト5で確認できます。
+              広島県内の市町村を、観察件数が多いほど濃い色で表示します。
             </p>
           </div>
           {profile.municipalityMax === 0 ? (
             <p className="helper-text">地図に表示できる観察記録がまだありません。</p>
           ) : (
             <>
-              <HiroshimaMap counts={profile.municipalityCounts} max={profile.municipalityMax} />
+              <ChoroplethMap
+                paths={HIROSHIMA_MUNICIPALITY_PATHS}
+                viewBox={HIROSHIMA_MAP_VIEWBOX}
+                counts={profile.municipalityCounts}
+                max={profile.municipalityMax}
+                ariaLabel="観察地域の分布地図（広島県・市町村別）"
+              />
               <MapLegend max={profile.municipalityMax} />
             </>
           )}
         </div>
+
+        {KURE_MAP_PATHS.length > 0 ? (
+          <div className="profile-section">
+            <div className="profile-section-head">
+              <h3>呉市内の分布</h3>
+              <p className="helper-text">呉市の地域を、観察件数が多いほど濃い色で表示します。</p>
+            </div>
+            {profile.kureSublocationMax === 0 ? (
+              <p className="helper-text">呉市内の観察記録がまだありません。</p>
+            ) : (
+              <>
+                <ChoroplethMap
+                  paths={KURE_MAP_PATHS}
+                  viewBox={KURE_MAP_VIEWBOX}
+                  counts={profile.kureSublocationCounts}
+                  max={profile.kureSublocationMax}
+                  ariaLabel="観察地域の分布地図（呉市内）"
+                />
+                <MapLegend max={profile.kureSublocationMax} />
+              </>
+            )}
+          </div>
+        ) : null}
 
         <div className="profile-columns">
           <div className="profile-section">
