@@ -1,29 +1,8 @@
-import { KURE_REGION_ORDER, type MemberProfile } from "@/lib/profile";
-
-// 呉エリア簡略地図における各地域の中心座標（viewBox 360 x 300 上のスキーマ配置）。
-// 西→東・沿岸→内陸・南の島しょ部という実際の位置関係を模式化したもので、
-// 測量的に正確な海岸線ではない点に注意。
-const REGION_POSITIONS: Record<string, { x: number; y: number }> = {
-  呉市天応吉浦: { x: 42, y: 96 },
-  呉市郷原: { x: 122, y: 44 },
-  呉市焼山: { x: 122, y: 96 },
-  呉市灰ヶ峰: { x: 110, y: 140 },
-  呉市旧呉市: { x: 78, y: 176 },
-  呉市広阿賀: { x: 182, y: 150 },
-  呉市野呂山: { x: 216, y: 90 },
-  呉市仁方: { x: 212, y: 180 },
-  呉市川尻: { x: 264, y: 148 },
-  呉市安浦: { x: 316, y: 118 },
-  呉市音戸: { x: 80, y: 232 },
-  呉市倉橋: { x: 96, y: 276 },
-  呉市下蒲刈: { x: 184, y: 238 },
-  呉市上蒲刈: { x: 238, y: 250 },
-  呉市豊島: { x: 292, y: 256 },
-  呉市大崎下島: { x: 330, y: 284 }
-};
-
-const TILE_WIDTH = 52;
-const TILE_HEIGHT = 28;
+import {
+  HIROSHIMA_MAP_VIEWBOX,
+  HIROSHIMA_MUNICIPALITY_PATHS
+} from "@/lib/hiroshima-map-paths";
+import type { MemberProfile } from "@/lib/profile";
 
 // 件数の多寡を緑の濃淡へ変換する。0件は淡い中間色、多いほど濃い緑。
 function regionFill(count: number, max: number): string {
@@ -39,75 +18,59 @@ function regionFill(count: number, max: number): string {
   return `rgb(${mix(light.r, dark.r)}, ${mix(light.g, dark.g)}, ${mix(light.b, dark.b)})`;
 }
 
-function regionTextColor(count: number, max: number): string {
-  const ratio = max > 0 ? count / max : 0;
-  return count > 0 && ratio > 0.55 ? "#ffffff" : "#26331f";
-}
-
-function KureAreaMap({
+function HiroshimaMap({
   counts,
   max
 }: {
   counts: Record<string, number>;
   max: number;
 }) {
-  const width = 360;
-  const height = 300;
+  const { width, height } = HIROSHIMA_MAP_VIEWBOX;
 
   return (
     <svg
       className="profile-map"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label="観察地域の分布地図（呉エリア）"
+      aria-label="観察地域の分布地図（広島県・市町村別）"
     >
-      <rect x={0} y={0} width={width} height={height} rx={16} className="profile-map-sea" />
-      <line x1={12} y1={204} x2={width - 12} y2={204} className="profile-map-divider" />
-      <text x={16} y={22} className="profile-map-caption">
-        本土
-      </text>
-      <text x={16} y={224} className="profile-map-caption">
-        島しょ部
-      </text>
-
-      {KURE_REGION_ORDER.map((name) => {
-        const pos = REGION_POSITIONS[name];
-        if (!pos) {
-          return null;
-        }
-
-        const count = counts[name] ?? 0;
-        const label = name.replace(/^呉市/, "");
-        const textColor = regionTextColor(count, max);
-
+      {HIROSHIMA_MUNICIPALITY_PATHS.map((municipality) => {
+        const count = counts[municipality.name] ?? 0;
         return (
-          <g key={name}>
-            <rect
-              x={pos.x - TILE_WIDTH / 2}
-              y={pos.y - TILE_HEIGHT / 2}
-              width={TILE_WIDTH}
-              height={TILE_HEIGHT}
-              rx={7}
-              fill={regionFill(count, max)}
-              className="profile-map-tile"
-            />
-            <text x={pos.x} y={pos.y - 1} textAnchor="middle" fontSize={10} fill={textColor}>
-              {label}
-            </text>
-            <text
-              x={pos.x}
-              y={pos.y + 11}
-              textAnchor="middle"
-              fontSize={10}
-              fontWeight={700}
-              fill={textColor}
-            >
-              {count}
-            </text>
-          </g>
+          <path
+            key={municipality.name}
+            d={municipality.d}
+            fill={regionFill(count, max)}
+            className="profile-map-region"
+          >
+            <title>
+              {municipality.name}: {count}件
+            </title>
+          </path>
         );
       })}
     </svg>
+  );
+}
+
+function MapLegend({ max }: { max: number }) {
+  if (max <= 0) {
+    return null;
+  }
+
+  const stops = [0, 0.25, 0.5, 0.75, 1];
+  return (
+    <div className="profile-map-legend">
+      <span className="profile-map-legend-label">少ない</span>
+      {stops.map((stop) => (
+        <span
+          key={stop}
+          className="profile-map-legend-swatch"
+          style={{ background: regionFill(Math.max(1, Math.round(stop * max)), max) }}
+        />
+      ))}
+      <span className="profile-map-legend-label">多い（最大{max}件）</span>
+    </div>
   );
 }
 
@@ -194,19 +157,18 @@ export function MemberProfileDialog({
         <div className="profile-section">
           <div className="profile-section-head">
             <h3>観察地域の分布</h3>
-            <p className="helper-text">呉エリアの地域を、観察件数が多いほど濃い色で表示します。</p>
-          </div>
-          {profile.kureTotal === 0 ? (
-            <p className="helper-text">呉エリアの観察記録がまだありません。</p>
-          ) : (
-            <KureAreaMap counts={profile.kureRegionCounts} max={profile.kureRegionMax} />
-          )}
-          {profile.nonKureCounts.length > 0 ? (
-            <p className="profile-nonkure">
-              呉市外の観察:{" "}
-              {profile.nonKureCounts.map((row) => `${row.label} ${row.count}件`).join(" / ")}
+            <p className="helper-text">
+              広島県内の市町村を、観察件数が多いほど濃い色で表示します。呉市内の内訳は下のベスト5で確認できます。
             </p>
-          ) : null}
+          </div>
+          {profile.municipalityMax === 0 ? (
+            <p className="helper-text">地図に表示できる観察記録がまだありません。</p>
+          ) : (
+            <>
+              <HiroshimaMap counts={profile.municipalityCounts} max={profile.municipalityMax} />
+              <MapLegend max={profile.municipalityMax} />
+            </>
+          )}
         </div>
 
         <div className="profile-columns">

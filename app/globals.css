@@ -1288,33 +1288,32 @@ select:disabled {
   width: 100%;
   height: auto;
   margin-top: 10px;
+  background: rgba(88, 150, 175, 0.1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
-.profile-map-sea {
-  fill: rgba(88, 150, 175, 0.12);
-  stroke: var(--line);
-  stroke-width: 1;
+.profile-map-region {
+  stroke: rgba(31, 42, 31, 0.28);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
 }
 
-.profile-map-divider {
-  stroke: rgba(31, 42, 31, 0.2);
-  stroke-dasharray: 4 4;
-}
-
-.profile-map-caption {
-  fill: var(--muted);
-  font-size: 11px;
-}
-
-.profile-map-tile {
-  stroke: rgba(31, 42, 31, 0.16);
-  stroke-width: 1;
-}
-
-.profile-nonkure {
-  font-size: 13px;
-  color: var(--muted);
+.profile-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.profile-map-legend-swatch {
+  width: 22px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(31, 42, 31, 0.12);
 }
 
 .profile-bar-list {

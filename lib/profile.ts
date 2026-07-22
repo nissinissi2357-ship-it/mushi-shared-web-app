@@ -1,27 +1,38 @@
 import type { Member, ObservationLog, PointEntry } from "@/lib/types";
 
-// 呉市内の地域（コロプレス地図で塗り分ける単位）。lib/locations.ts の
-// KURE_SUBLOCATIONS を「呉市◯◯」の正規化名にしたもの。地図の描画順にもなる。
-export const KURE_REGION_ORDER = [
-  "呉市旧呉市",
-  "呉市天応吉浦",
-  "呉市焼山",
-  "呉市灰ヶ峰",
-  "呉市郷原",
-  "呉市広阿賀",
-  "呉市野呂山",
-  "呉市仁方",
-  "呉市川尻",
-  "呉市安浦",
-  "呉市音戸",
-  "呉市倉橋",
-  "呉市下蒲刈",
-  "呉市上蒲刈",
-  "呉市豊島",
-  "呉市大崎下島"
-] as const;
+// アプリの地域名 → 広島県地図(N03 行政区域)の市町村名。
+// 「呉市◯◯」の各地域は市町村地図では呉市ひとつに集約する(prefixで処理)。
+const APP_LOCATION_TO_MUNICIPALITY: Record<string, string> = {
+  熊野町: "熊野町",
+  尾道市: "尾道市",
+  府中町: "府中町",
+  江田島: "江田島市",
+  大崎上島: "大崎上島町",
+  竹原市: "竹原市",
+  安芸太田: "安芸太田町",
+  北広島: "北広島町",
+  安芸高田: "安芸高田市",
+  大竹市: "大竹市",
+  廿日市: "廿日市市",
+  広島市: "広島市",
+  呉市: "呉市",
+  東広島市: "東広島市",
+  三次市: "三次市",
+  世羅町: "世羅町",
+  庄原市: "庄原市",
+  神石高原: "神石高原町",
+  府中市: "府中市",
+  福山市: "福山市",
+  三原市: "三原市",
+  坂町: "坂町"
+};
 
-const KURE_REGION_SET = new Set<string>(KURE_REGION_ORDER);
+function resolveMunicipality(location: string): string | null {
+  if (location.startsWith("呉市")) {
+    return "呉市";
+  }
+  return APP_LOCATION_TO_MUNICIPALITY[location] ?? null;
+}
 
 export type ProfileCount = { label: string; count: number };
 
@@ -33,10 +44,8 @@ export type MemberProfile = {
   monthPoints: number;
   topLocations: ProfileCount[];
   topOrders: ProfileCount[];
-  kureRegionCounts: Record<string, number>;
-  kureRegionMax: number;
-  kureTotal: number;
-  nonKureCounts: ProfileCount[];
+  municipalityCounts: Record<string, number>;
+  municipalityMax: number;
 };
 
 function toMonthKey(dateLike: string | Date): string {
@@ -82,10 +91,7 @@ export function buildMemberProfile(
 
   const locationCounts = new Map<string, number>();
   const orderCounts = new Map<string, number>();
-  const kureRegionCounts: Record<string, number> = Object.fromEntries(
-    KURE_REGION_ORDER.map((name) => [name, 0])
-  );
-  const nonKureCounts = new Map<string, number>();
+  const municipalityCounts: Record<string, number> = {};
 
   for (const log of memberLogs) {
     const location = (log.location || "").trim() || "地域未設定";
@@ -94,16 +100,13 @@ export function buildMemberProfile(
     const orderName = (log.orderName || "").trim() || "分類未設定";
     orderCounts.set(orderName, (orderCounts.get(orderName) ?? 0) + 1);
 
-    if (KURE_REGION_SET.has(location)) {
-      kureRegionCounts[location] += 1;
-    } else if (location !== "地域未設定") {
-      nonKureCounts.set(location, (nonKureCounts.get(location) ?? 0) + 1);
+    const municipality = resolveMunicipality(location);
+    if (municipality) {
+      municipalityCounts[municipality] = (municipalityCounts[municipality] ?? 0) + 1;
     }
   }
 
-  const kureCountValues = Object.values(kureRegionCounts);
-  const kureRegionMax = kureCountValues.reduce((max, value) => Math.max(max, value), 0);
-  const kureTotal = kureCountValues.reduce((sum, value) => sum + value, 0);
+  const municipalityMax = Object.values(municipalityCounts).reduce((max, value) => Math.max(max, value), 0);
 
   return {
     member,
@@ -113,9 +116,7 @@ export function buildMemberProfile(
     monthPoints,
     topLocations: rankCounts(locationCounts, 5),
     topOrders: rankCounts(orderCounts, 5),
-    kureRegionCounts,
-    kureRegionMax,
-    kureTotal,
-    nonKureCounts: rankCounts(nonKureCounts)
+    municipalityCounts,
+    municipalityMax
   };
 }
