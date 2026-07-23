@@ -14,7 +14,7 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
-import { buildMemberProfile, buildMonthlyMunicipalityCounts } from "@/lib/profile";
+import { buildAreaCounts, buildMapPeriodOptions, buildMemberProfile } from "@/lib/profile";
 import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
@@ -244,6 +244,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
+  const [homeMapPeriod, setHomeMapPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
@@ -258,7 +259,14 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     [profileMember, logs, pointEntries]
   );
 
-  const monthlyMunicipalityMap = useMemo(() => buildMonthlyMunicipalityCounts(logs), [logs]);
+  const homeMapPeriodOptions = useMemo(() => buildMapPeriodOptions(logs), [logs]);
+  const activeHomeMapPeriod = homeMapPeriodOptions.some((option) => option.value === homeMapPeriod)
+    ? homeMapPeriod
+    : homeMapPeriodOptions[0]?.value ?? "";
+  const homeMapCounts = useMemo(
+    () => buildAreaCounts(logs, { period: activeHomeMapPeriod }),
+    [logs, activeHomeMapPeriod]
+  );
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
 
@@ -1450,6 +1458,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       {memberProfile ? (
         <MemberProfileDialog
           profile={memberProfile}
+          logs={logs}
           onClose={() => setProfileMemberId(null)}
           onViewLogs={() => {
             setLogMemberFilterId(memberProfile.member.id);
@@ -1634,21 +1643,31 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
 
               <div className="home-map-block">
-                <div className="panel-head">
+                <div className="panel-head map-section-head">
                   <div>
                     <p className="section-label">Map</p>
-                    <h3>今月の記録マップ（全県）</h3>
+                    <h3>記録マップ（全県）</h3>
                     <p className="helper-text">
-                      隊員全員の今月の観察記録を、市町村ごとに件数が多いほど濃い色で表示します。
+                      隊員全員の観察記録を、市町村ごとに件数が多いほど濃い色で表示します。
                     </p>
                   </div>
+                  <label className="map-period-label">
+                    期間
+                    <select value={activeHomeMapPeriod} onChange={(event) => setHomeMapPeriod(event.target.value)}>
+                      {homeMapPeriodOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                {monthlyMunicipalityMap.max === 0 ? (
-                  <p className="helper-text">今月の観察記録はまだありません。</p>
+                {homeMapCounts.municipalityMax === 0 ? (
+                  <p className="helper-text">この期間の観察記録はありません。</p>
                 ) : (
                   <HiroshimaCountMap
-                    counts={monthlyMunicipalityMap.counts}
-                    max={monthlyMunicipalityMap.max}
+                    counts={homeMapCounts.municipalityCounts}
+                    max={homeMapCounts.municipalityMax}
                   />
                 )}
               </div>

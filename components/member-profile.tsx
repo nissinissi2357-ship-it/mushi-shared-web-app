@@ -1,9 +1,13 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import {
   HIROSHIMA_MAP_VIEWBOX,
   HIROSHIMA_MUNICIPALITY_PATHS
 } from "@/lib/hiroshima-map-paths";
 import { KURE_MAP_PATHS, KURE_MAP_VIEWBOX } from "@/lib/kure-map-paths";
-import type { MemberProfile } from "@/lib/profile";
+import { buildAreaCounts, buildMapPeriodOptions, type MemberProfile } from "@/lib/profile";
+import type { ObservationLog } from "@/lib/types";
 
 // 件数の多寡を緑の濃淡へ変換する。0件は淡い中間色、多いほど濃い緑。
 function regionFill(count: number, max: number): string {
@@ -162,14 +166,32 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function MemberProfileDialog({
   profile,
+  logs,
   onClose,
   onViewLogs
 }: {
   profile: MemberProfile;
+  logs: ObservationLog[];
   onClose: () => void;
   onViewLogs: () => void;
 }) {
   const roleLabel = ROLE_LABEL[profile.member.role] ?? "隊員";
+
+  const memberLogs = useMemo(
+    () => logs.filter((log) => log.memberId === profile.member.id),
+    [logs, profile.member.id]
+  );
+  const periodOptions = useMemo(() => buildMapPeriodOptions(memberLogs), [memberLogs]);
+  const [mapPeriod, setMapPeriod] = useState(
+    () => periodOptions.find((option) => option.value.startsWith("year:"))?.value ?? periodOptions[0]?.value ?? ""
+  );
+  const activePeriod = periodOptions.some((option) => option.value === mapPeriod)
+    ? mapPeriod
+    : periodOptions[0]?.value ?? "";
+  const areaCounts = useMemo(
+    () => buildAreaCounts(logs, { period: activePeriod, memberId: profile.member.id }),
+    [logs, activePeriod, profile.member.id]
+  );
 
   return (
     <div className="alert-overlay" onClick={onClose}>
@@ -212,16 +234,28 @@ export function MemberProfileDialog({
         </div>
 
         <div className="profile-section">
-          <div className="profile-section-head">
-            <h3>観察地域の分布（広島県）</h3>
-            <p className="helper-text">
-              広島県内の市町村を、観察件数が多いほど濃い色で表示します。
-            </p>
+          <div className="profile-section-head map-section-head">
+            <div>
+              <h3>観察地域の分布（広島県）</h3>
+              <p className="helper-text">
+                広島県内の市町村を、観察件数が多いほど濃い色で表示します。
+              </p>
+            </div>
+            <label className="map-period-label">
+              期間
+              <select value={activePeriod} onChange={(event) => setMapPeriod(event.target.value)}>
+                {periodOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          {profile.municipalityMax === 0 ? (
-            <p className="helper-text">地図に表示できる観察記録がまだありません。</p>
+          {areaCounts.municipalityMax === 0 ? (
+            <p className="helper-text">この期間の観察記録はありません。</p>
           ) : (
-            <HiroshimaCountMap counts={profile.municipalityCounts} max={profile.municipalityMax} />
+            <HiroshimaCountMap counts={areaCounts.municipalityCounts} max={areaCounts.municipalityMax} />
           )}
         </div>
 
@@ -231,19 +265,19 @@ export function MemberProfileDialog({
               <h3>呉市内の分布</h3>
               <p className="helper-text">呉市の地域を、観察件数が多いほど濃い色で表示します。</p>
             </div>
-            {profile.kureSublocationMax === 0 ? (
-              <p className="helper-text">呉市内の観察記録がまだありません。</p>
+            {areaCounts.kureSublocationMax === 0 ? (
+              <p className="helper-text">この期間の呉市内の観察記録はありません。</p>
             ) : (
               <>
                 <ChoroplethMap
                   paths={KURE_MAP_PATHS}
                   viewBox={KURE_MAP_VIEWBOX}
-                  counts={profile.kureSublocationCounts}
-                  max={profile.kureSublocationMax}
+                  counts={areaCounts.kureSublocationCounts}
+                  max={areaCounts.kureSublocationMax}
                   ariaLabel="観察地域の分布地図（呉市内）"
                   showLabels
                 />
-                <MapLegend max={profile.kureSublocationMax} />
+                <MapLegend max={areaCounts.kureSublocationMax} />
               </>
             )}
           </div>

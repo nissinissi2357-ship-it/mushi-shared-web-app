@@ -72,15 +72,88 @@ export type MemberProfile = {
   monthPoints: number;
   topLocations: ProfileCount[];
   topOrders: ProfileCount[];
+};
+
+function toMonthKey(dateLike: string | Date): string {
+  const date = typeof dateLike === "string" ? new Date(dateLike) : dateLike;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthKey(monthKey: string): string {
+  const [year, month] = monthKey.split("-");
+  return `${year}年${Number(month)}月`;
+}
+
+// 地図の期間フィルタ。ランキングと同じ `scope:value` 形式(month:YYYY-MM / year:YYYY)。
+function matchesMapPeriod(observedAt: string, period: string): boolean {
+  const [scope, rawValue] = period.split(":");
+  if (scope === "year") {
+    return new Date(observedAt).getFullYear() === Number(rawValue);
+  }
+  return toMonthKey(observedAt) === rawValue;
+}
+
+export type MapPeriodOption = { value: string; label: string };
+
+// 地図の期間プルダウン。ランキングと同じく「今月・過去の各月・通算(今年)」。
+export function buildMapPeriodOptions(logs: ObservationLog[], now: Date = new Date()): MapPeriodOption[] {
+  const currentMonthKey = toMonthKey(now);
+  const monthKeys = new Set<string>([currentMonthKey]);
+  for (const log of logs) {
+    monthKeys.add(toMonthKey(log.observedAt));
+  }
+
+  const monthlyOptions = [...monthKeys]
+    .sort((left, right) => right.localeCompare(left))
+    .map((monthKey) => ({
+      value: `month:${monthKey}`,
+      label: monthKey === currentMonthKey ? "今月" : formatMonthKey(monthKey)
+    }));
+
+  return [...monthlyOptions, { value: `year:${now.getFullYear()}`, label: `通算（${now.getFullYear()}年）` }];
+}
+
+export type AreaCounts = {
   municipalityCounts: Record<string, number>;
   municipalityMax: number;
   kureSublocationCounts: Record<string, number>;
   kureSublocationMax: number;
 };
 
-function toMonthKey(dateLike: string | Date): string {
-  const date = typeof dateLike === "string" ? new Date(dateLike) : dateLike;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+// 地図用の地域別件数。period(未指定なら全期間)と memberId(未指定なら全員)で絞り込む。
+export function buildAreaCounts(
+  logs: ObservationLog[],
+  options: { period?: string; memberId?: string } = {}
+): AreaCounts {
+  const { period, memberId } = options;
+  const municipalityCounts: Record<string, number> = {};
+  const kureSublocationCounts: Record<string, number> = {};
+
+  for (const log of logs) {
+    if (memberId && log.memberId !== memberId) {
+      continue;
+    }
+    if (period && !matchesMapPeriod(log.observedAt, period)) {
+      continue;
+    }
+
+    const location = (log.location || "").trim();
+    const municipality = resolveMunicipality(location);
+    if (municipality) {
+      municipalityCounts[municipality] = (municipalityCounts[municipality] ?? 0) + 1;
+    }
+    const kureSublocation = resolveKureSublocation(location);
+    if (kureSublocation) {
+      kureSublocationCounts[kureSublocation] = (kureSublocationCounts[kureSublocation] ?? 0) + 1;
+    }
+  }
+
+  return {
+    municipalityCounts,
+    municipalityMax: Object.values(municipalityCounts).reduce((max, value) => Math.max(max, value), 0),
+    kureSublocationCounts,
+    kureSublocationMax: Object.values(kureSublocationCounts).reduce((max, value) => Math.max(max, value), 0)
+  };
 }
 
 function rankCounts(counts: Map<string, number>, limit?: number): ProfileCount[] {
@@ -94,29 +167,6 @@ function rankCounts(counts: Map<string, number>, limit?: number): ProfileCount[]
     });
 
   return typeof limit === "number" ? rows.slice(0, limit) : rows;
-}
-
-// 全員分・指定月の市町村別観察件数(ホーム画面の全県マップ用)。
-export function buildMonthlyMunicipalityCounts(
-  logs: ObservationLog[],
-  now: Date = new Date()
-): { counts: Record<string, number>; max: number } {
-  const currentMonthKey = toMonthKey(now);
-  const counts: Record<string, number> = {};
-
-  for (const log of logs) {
-    if (toMonthKey(log.observedAt) !== currentMonthKey) {
-      continue;
-    }
-    const location = (log.location || "").trim();
-    const municipality = resolveMunicipality(location);
-    if (municipality) {
-      counts[municipality] = (counts[municipality] ?? 0) + 1;
-    }
-  }
-
-  const max = Object.values(counts).reduce((value, count) => Math.max(value, count), 0);
-  return { counts, max };
 }
 
 export function buildMemberProfile(
@@ -144,8 +194,6 @@ export function buildMemberProfile(
 
   const locationCounts = new Map<string, number>();
   const orderCounts = new Map<string, number>();
-  const municipalityCounts: Record<string, number> = {};
-  const kureSublocationCounts: Record<string, number> = {};
 
   for (const log of memberLogs) {
     const location = (log.location || "").trim() || "地域未設定";
@@ -153,20 +201,7 @@ export function buildMemberProfile(
 
     const orderName = (log.orderName || "").trim() || "分類未設定";
     orderCounts.set(orderName, (orderCounts.get(orderName) ?? 0) + 1);
-
-    const municipality = resolveMunicipality(location);
-    if (municipality) {
-      municipalityCounts[municipality] = (municipalityCounts[municipality] ?? 0) + 1;
-    }
-
-    const kureSublocation = resolveKureSublocation(location);
-    if (kureSublocation) {
-      kureSublocationCounts[kureSublocation] = (kureSublocationCounts[kureSublocation] ?? 0) + 1;
-    }
   }
-
-  const municipalityMax = Object.values(municipalityCounts).reduce((max, value) => Math.max(max, value), 0);
-  const kureSublocationMax = Object.values(kureSublocationCounts).reduce((max, value) => Math.max(max, value), 0);
 
   return {
     member,
@@ -175,10 +210,6 @@ export function buildMemberProfile(
     lifetimePoints,
     monthPoints,
     topLocations: rankCounts(locationCounts, 5),
-    topOrders: rankCounts(orderCounts, 5),
-    municipalityCounts,
-    municipalityMax,
-    kureSublocationCounts,
-    kureSublocationMax
+    topOrders: rankCounts(orderCounts, 5)
   };
 }
