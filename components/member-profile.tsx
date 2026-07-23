@@ -19,18 +19,28 @@ function regionFill(count: number, max: number): string {
   return `rgb(${mix(light.r, dark.r)}, ${mix(light.g, dark.g)}, ${mix(light.b, dark.b)})`;
 }
 
+type MapRegion = {
+  name: string;
+  d: string;
+  transform?: string;
+  labelX?: number;
+  labelY?: number;
+};
+
 function ChoroplethMap({
   paths,
   viewBox,
   counts,
   max,
-  ariaLabel
+  ariaLabel,
+  showLabels = false
 }: {
-  paths: { name: string; d: string; transform?: string }[];
+  paths: MapRegion[];
   viewBox: { width: number; height: number };
   counts: Record<string, number>;
   max: number;
   ariaLabel: string;
+  showLabels?: boolean;
 }) {
   return (
     <svg
@@ -55,7 +65,48 @@ function ChoroplethMap({
           </path>
         );
       })}
+      {showLabels
+        ? paths.map((region) => {
+            const count = counts[region.name] ?? 0;
+            if (count <= 0 || region.labelX == null || region.labelY == null) {
+              return null;
+            }
+            return (
+              <text
+                key={`label-${region.name}`}
+                x={region.labelX}
+                y={region.labelY}
+                textAnchor="middle"
+                className="profile-map-label"
+              >
+                <tspan x={region.labelX} dy={0}>
+                  {region.name}
+                </tspan>
+                <tspan x={region.labelX} dy={18} className="profile-map-label-count">
+                  {count}件
+                </tspan>
+              </text>
+            );
+          })
+        : null}
     </svg>
+  );
+}
+
+// 全県マップ(市町村単位)＋凡例。ホーム画面とプロフィールの両方で使う。
+export function HiroshimaCountMap({ counts, max }: { counts: Record<string, number>; max: number }) {
+  return (
+    <>
+      <ChoroplethMap
+        paths={HIROSHIMA_MUNICIPALITY_PATHS}
+        viewBox={HIROSHIMA_MAP_VIEWBOX}
+        counts={counts}
+        max={max}
+        ariaLabel="観察地域の分布地図（広島県・市町村別）"
+        showLabels
+      />
+      <MapLegend max={max} />
+    </>
   );
 }
 
@@ -170,16 +221,7 @@ export function MemberProfileDialog({
           {profile.municipalityMax === 0 ? (
             <p className="helper-text">地図に表示できる観察記録がまだありません。</p>
           ) : (
-            <>
-              <ChoroplethMap
-                paths={HIROSHIMA_MUNICIPALITY_PATHS}
-                viewBox={HIROSHIMA_MAP_VIEWBOX}
-                counts={profile.municipalityCounts}
-                max={profile.municipalityMax}
-                ariaLabel="観察地域の分布地図（広島県・市町村別）"
-              />
-              <MapLegend max={profile.municipalityMax} />
-            </>
+            <HiroshimaCountMap counts={profile.municipalityCounts} max={profile.municipalityMax} />
           )}
         </div>
 

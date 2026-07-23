@@ -9,12 +9,12 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import { MemberProfileDialog } from "@/components/member-profile";
+import { HiroshimaCountMap, MemberProfileDialog } from "@/components/member-profile";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
-import { buildMemberProfile } from "@/lib/profile";
+import { buildMemberProfile, buildMonthlyMunicipalityCounts } from "@/lib/profile";
 import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
@@ -257,6 +257,8 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     () => (profileMember ? buildMemberProfile(profileMember, logs, pointEntries) : null),
     [profileMember, logs, pointEntries]
   );
+
+  const monthlyMunicipalityMap = useMemo(() => buildMonthlyMunicipalityCounts(logs), [logs]);
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
 
@@ -1630,6 +1632,26 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
               </div>
 
               <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
+
+              <div className="home-map-block">
+                <div className="panel-head">
+                  <div>
+                    <p className="section-label">Map</p>
+                    <h3>今月の記録マップ（全県）</h3>
+                    <p className="helper-text">
+                      隊員全員の今月の観察記録を、市町村ごとに件数が多いほど濃い色で表示します。
+                    </p>
+                  </div>
+                </div>
+                {monthlyMunicipalityMap.max === 0 ? (
+                  <p className="helper-text">今月の観察記録はまだありません。</p>
+                ) : (
+                  <HiroshimaCountMap
+                    counts={monthlyMunicipalityMap.counts}
+                    max={monthlyMunicipalityMap.max}
+                  />
+                )}
+              </div>
 
               <div className="panel-head ranking-head">
                 <div>

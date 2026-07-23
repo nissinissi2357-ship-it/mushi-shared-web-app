@@ -1299,6 +1299,30 @@ select:disabled {
   stroke-linejoin: round;
 }
 
+.profile-map-label {
+  fill: #1f2a1f;
+  font-size: 17px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(255, 251, 243, 0.9);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.profile-map-label-count {
+  font-size: 15px;
+  fill: #1c4b2c;
+}
+
+.home-map-block {
+  margin-top: 22px;
+}
+
+.home-map-block .panel-head {
+  margin-bottom: 4px;
+}
+
 .profile-map-legend {
   display: flex;
   align-items: center;

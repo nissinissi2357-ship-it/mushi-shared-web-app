@@ -96,6 +96,29 @@ function rankCounts(counts: Map<string, number>, limit?: number): ProfileCount[]
   return typeof limit === "number" ? rows.slice(0, limit) : rows;
 }
 
+// 全員分・指定月の市町村別観察件数(ホーム画面の全県マップ用)。
+export function buildMonthlyMunicipalityCounts(
+  logs: ObservationLog[],
+  now: Date = new Date()
+): { counts: Record<string, number>; max: number } {
+  const currentMonthKey = toMonthKey(now);
+  const counts: Record<string, number> = {};
+
+  for (const log of logs) {
+    if (toMonthKey(log.observedAt) !== currentMonthKey) {
+      continue;
+    }
+    const location = (log.location || "").trim();
+    const municipality = resolveMunicipality(location);
+    if (municipality) {
+      counts[municipality] = (counts[municipality] ?? 0) + 1;
+    }
+  }
+
+  const max = Object.values(counts).reduce((value, count) => Math.max(value, count), 0);
+  return { counts, max };
+}
+
 export function buildMemberProfile(
   member: Member,
   logs: ObservationLog[],
