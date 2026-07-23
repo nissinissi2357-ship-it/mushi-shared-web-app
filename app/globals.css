@@ -1294,8 +1294,8 @@ select:disabled {
 }
 
 .profile-map-region {
-  stroke: rgba(31, 42, 31, 0.28);
-  stroke-width: 0.6;
+  stroke: rgba(31, 42, 31, 0.55);
+  stroke-width: 1.4;
   stroke-linejoin: round;
 }
 

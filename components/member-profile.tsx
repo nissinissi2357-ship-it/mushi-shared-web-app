@@ -241,6 +241,7 @@ export function MemberProfileDialog({
                   counts={profile.kureSublocationCounts}
                   max={profile.kureSublocationMax}
                   ariaLabel="観察地域の分布地図（呉市内）"
+                  showLabels
                 />
                 <MapLegend max={profile.kureSublocationMax} />
               </>
