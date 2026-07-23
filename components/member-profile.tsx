@@ -97,7 +97,33 @@ function ChoroplethMap({
   );
 }
 
-// 全県マップ(市町村単位)＋凡例。ホーム画面とプロフィールの両方で使う。
+// 出典クレジット(全県マップ = 国土数値情報)。
+export function HiroshimaMapCaption() {
+  return (
+    <p className="map-caption">
+      「国土数値情報（行政区域データ）」（国土交通省）（
+      <a
+        href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-2026.html"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-2026.html
+      </a>
+      ）を加工して作成
+    </p>
+  );
+}
+
+// 出典クレジット(呉市マップ = 国勢調査 e-Stat)。
+export function KureMapCaption() {
+  return (
+    <p className="map-caption">
+      『国勢調査町丁・字等別境界データセット』「令和2年国勢調査町丁・字等別境界データ」（e-Stat）を加工して作成
+    </p>
+  );
+}
+
+// 全県マップ(市町村単位)＋凡例＋出典。ホーム画面とプロフィールの両方で使う。
 export function HiroshimaCountMap({ counts, max }: { counts: Record<string, number>; max: number }) {
   return (
     <>
@@ -110,6 +136,7 @@ export function HiroshimaCountMap({ counts, max }: { counts: Record<string, numb
         showLabels
       />
       <MapLegend max={max} />
+      <HiroshimaMapCaption />
     </>
   );
 }
@@ -278,6 +305,7 @@ export function MemberProfileDialog({
                   showLabels
                 />
                 <MapLegend max={areaCounts.kureSublocationMax} />
+                <KureMapCaption />
               </>
             )}
           </div>
