@@ -9,10 +9,12 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { HiroshimaCountMap, MemberProfileDialog } from "@/components/member-profile";
 import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
+import { buildAreaCounts, buildMapPeriodOptions, buildMemberProfile } from "@/lib/profile";
 import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
   InquiryObservation,
@@ -210,6 +212,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isAdminSaving, setIsAdminSaving] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
+  const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
   const [isAuthPanelOpen, setIsAuthPanelOpen] = useState(false);
   const [isRegisterPanelOpen, setIsRegisterPanelOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
@@ -241,11 +244,29 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [openRecordMenuKey, setOpenRecordMenuKey] = useState<string | null>(null);
   const [logsPage, setLogsPage] = useState(1);
   const [rankingPeriod, setRankingPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
+  const [homeMapPeriod, setHomeMapPeriod] = useState(() => `month:${toMonthKey(new Date())}`);
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const canViewRanking = true;
   const currentYear = new Date().getFullYear();
+
+  const profileMember = profileMemberId
+    ? members.find((member) => member.id === profileMemberId) ?? null
+    : null;
+  const memberProfile = useMemo(
+    () => (profileMember ? buildMemberProfile(profileMember, logs, pointEntries) : null),
+    [profileMember, logs, pointEntries]
+  );
+
+  const homeMapPeriodOptions = useMemo(() => buildMapPeriodOptions(logs), [logs]);
+  const activeHomeMapPeriod = homeMapPeriodOptions.some((option) => option.value === homeMapPeriod)
+    ? homeMapPeriod
+    : homeMapPeriodOptions[0]?.value ?? "";
+  const homeMapCounts = useMemo(
+    () => buildAreaCounts(logs, { period: activeHomeMapPeriod }),
+    [logs, activeHomeMapPeriod]
+  );
 
   const hasLogSearch = Boolean(logSearchSpecies.trim() || logSearchLocation.trim() || logSearchDate);
 
@@ -1434,6 +1455,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
         {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
       </header>
 
+      {memberProfile ? (
+        <MemberProfileDialog
+          profile={memberProfile}
+          logs={logs}
+          onClose={() => setProfileMemberId(null)}
+          onViewLogs={() => {
+            setLogMemberFilterId(memberProfile.member.id);
+            setProfileMemberId(null);
+            setActiveTab("logs");
+          }}
+        />
+      ) : null}
+
       {selectedInquirySpecies ? (
         <div className="alert-overlay" onClick={() => setSelectedInquirySpecies("")}>
           <section className="alert-panel inquiry-dialog" onClick={(event) => event.stopPropagation()}>
@@ -1608,6 +1642,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
 
+              <div className="home-map-block">
+                <div className="panel-head map-section-head">
+                  <div>
+                    <p className="section-label">Map</p>
+                    <h3>記録マップ（全県）</h3>
+                    <p className="helper-text">
+                      隊員全員の観察記録を、市町村ごとに件数が多いほど濃い色で表示します。
+                    </p>
+                  </div>
+                  <label className="map-period-label">
+                    期間
+                    <select value={activeHomeMapPeriod} onChange={(event) => setHomeMapPeriod(event.target.value)}>
+                      {homeMapPeriodOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {homeMapCounts.municipalityMax === 0 ? (
+                  <p className="helper-text">この期間の観察記録はありません。</p>
+                ) : (
+                  <HiroshimaCountMap
+                    counts={homeMapCounts.municipalityCounts}
+                    max={homeMapCounts.municipalityMax}
+                  />
+                )}
+              </div>
+
               <div className="panel-head ranking-head">
                 <div>
                   <p className="section-label">Ranking</p>
@@ -1631,10 +1695,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   <article
                     key={`${rankingPeriod}-${summary.memberId}`}
                     className="ranking-item"
-                    onClick={() => {
-                      setLogMemberFilterId(summary.memberId);
-                      setActiveTab("logs");
-                    }}
+                    onClick={() => setProfileMemberId(summary.memberId)}
                     style={{ cursor: "pointer" }}
                   >
                     <span className="ranking-rank">{index + 1}</span>
