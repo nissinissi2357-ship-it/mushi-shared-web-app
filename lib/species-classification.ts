@@ -13,7 +13,8 @@ const EMPTY_CLASSIFICATION: SpeciesClassification = {
 };
 
 function normalizeSpeciesName(value: string) {
-  return value.trim().replace(/\s+/g, "");
+  // Unicode正規化(NFC)で、濁点が分解されたNFD形の種名もカタログと一致させる。
+  return value.normalize("NFC").trim().replace(/\s+/g, "");
 }
 
 const NORMALIZED_CATALOG = new Map<string, SpeciesClassification>(
