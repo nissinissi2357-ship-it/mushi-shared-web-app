@@ -450,52 +450,67 @@ export async function backfillObservationClassifications(): Promise<{
 }> {
   const supabase = createAdminClient();
 
-  const rows = await fetchAllRows<{ species: string; order_name: string | null; family_name: string | null }>(
-    supabase.from("observation_logs").select("species, order_name, family_name")
+  const rows = await fetchAllRows<{ id: string; species: string; order_name: string | null }>(
+    supabase.from("observation_logs").select("id, species, order_name")
   );
 
-  // 目名が空の記録がある種名を集める
-  const speciesToFill = new Set<string>();
+  // 同じ分類にする記録IDをまとめる(種名文字列ではなくIDで更新するので、
+  // NFD/NFCなどの表記差に左右されず確実に当たる)
+  const groups = new Map<string, { patch: Record<string, string>; ids: string[] }>();
+  const unmatched = new Map<string, number>();
+
   for (const row of rows) {
-    const species = (row.species ?? "").trim();
-    if (species && !(row.order_name ?? "").trim()) {
-      speciesToFill.add(species);
+    if ((row.order_name ?? "").trim()) {
+      continue; // 目名が既に入っている記録はスキップ(上書きしない)
     }
-  }
-
-  let updatedRows = 0;
-  let matchedSpecies = 0;
-  const unmatchedSpecies: string[] = [];
-
-  for (const species of speciesToFill) {
-    const classification = lookupSpeciesClassification(species);
-    if (!classification.orderName && !classification.familyName && !classification.scientificName) {
-      unmatchedSpecies.push(species);
+    const species = (row.species ?? "").trim();
+    if (!species) {
       continue;
     }
 
-    const patch: Record<string, string> = {};
-    if (classification.orderName) patch.order_name = classification.orderName;
-    if (classification.familyName) patch.family_name = classification.familyName;
-    if (classification.scientificName) patch.scientific_name = classification.scientificName;
-
-    // 目名が空の同種の記録だけを更新(手入力済みは上書きしない)
-    const { data, error } = await supabase
-      .from("observation_logs")
-      .update(patch)
-      .eq("species", species)
-      .or("order_name.is.null,order_name.eq.")
-      .select("id");
-
-    if (error) {
-      throw error;
+    const classification = lookupSpeciesClassification(species);
+    if (!classification.orderName && !classification.familyName && !classification.scientificName) {
+      unmatched.set(species, (unmatched.get(species) ?? 0) + 1);
+      continue;
     }
 
-    matchedSpecies += 1;
-    updatedRows += data?.length ?? 0;
+    const key = `${classification.orderName}${classification.familyName}${classification.scientificName}`;
+    let group = groups.get(key);
+    if (!group) {
+      const patch: Record<string, string> = {};
+      if (classification.orderName) patch.order_name = classification.orderName;
+      if (classification.familyName) patch.family_name = classification.familyName;
+      if (classification.scientificName) patch.scientific_name = classification.scientificName;
+      group = { patch, ids: [] };
+      groups.set(key, group);
+    }
+    group.ids.push(row.id);
   }
 
-  return { scanned: rows.length, updatedRows, matchedSpecies, unmatchedSpecies };
+  let updatedRows = 0;
+  const CHUNK = 200;
+  for (const group of groups.values()) {
+    for (let index = 0; index < group.ids.length; index += CHUNK) {
+      const idChunk = group.ids.slice(index, index + CHUNK);
+      const { data, error } = await supabase
+        .from("observation_logs")
+        .update(group.patch)
+        .in("id", idChunk)
+        .select("id");
+
+      if (error) {
+        throw error;
+      }
+      updatedRows += data?.length ?? 0;
+    }
+  }
+
+  return {
+    scanned: rows.length,
+    updatedRows,
+    matchedSpecies: groups.size,
+    unmatchedSpecies: [...unmatched.keys()]
+  };
 }
 
 export async function insertObservation(input: ObservationInsertInput, member: Member): Promise<ObservationLog> {
