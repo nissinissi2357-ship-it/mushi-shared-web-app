@@ -1,5 +1,6 @@
 import { hashPasscode } from "@/lib/auth";
 import { buildSummaries, fallbackLogs, fallbackMembers, fallbackPointEntries } from "@/lib/mock-data";
+import { lookupSpeciesClassification } from "@/lib/species-classification";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   InquiryObservation,
@@ -437,6 +438,64 @@ export async function adminDeleteMember(actorMemberId: string, targetMemberId: s
   if (error) {
     throw error;
   }
+}
+
+// 目名・科名が未入力の観察記録に、種名から分類(目・科・学名)を一括反映する。
+// 既に入っている分は上書きしない。カタログに無い種はスキップ。何度実行しても安全。
+export async function backfillObservationClassifications(): Promise<{
+  scanned: number;
+  updatedRows: number;
+  matchedSpecies: number;
+  unmatchedSpecies: string[];
+}> {
+  const supabase = createAdminClient();
+
+  const rows = await fetchAllRows<{ species: string; order_name: string | null; family_name: string | null }>(
+    supabase.from("observation_logs").select("species, order_name, family_name")
+  );
+
+  // 目名が空の記録がある種名を集める
+  const speciesToFill = new Set<string>();
+  for (const row of rows) {
+    const species = (row.species ?? "").trim();
+    if (species && !(row.order_name ?? "").trim()) {
+      speciesToFill.add(species);
+    }
+  }
+
+  let updatedRows = 0;
+  let matchedSpecies = 0;
+  const unmatchedSpecies: string[] = [];
+
+  for (const species of speciesToFill) {
+    const classification = lookupSpeciesClassification(species);
+    if (!classification.orderName && !classification.familyName && !classification.scientificName) {
+      unmatchedSpecies.push(species);
+      continue;
+    }
+
+    const patch: Record<string, string> = {};
+    if (classification.orderName) patch.order_name = classification.orderName;
+    if (classification.familyName) patch.family_name = classification.familyName;
+    if (classification.scientificName) patch.scientific_name = classification.scientificName;
+
+    // 目名が空の同種の記録だけを更新(手入力済みは上書きしない)
+    const { data, error } = await supabase
+      .from("observation_logs")
+      .update(patch)
+      .eq("species", species)
+      .or("order_name.is.null,order_name.eq.")
+      .select("id");
+
+    if (error) {
+      throw error;
+    }
+
+    matchedSpecies += 1;
+    updatedRows += data?.length ?? 0;
+  }
+
+  return { scanned: rows.length, updatedRows, matchedSpecies, unmatchedSpecies };
 }
 
 export async function insertObservation(input: ObservationInsertInput, member: Member): Promise<ObservationLog> {

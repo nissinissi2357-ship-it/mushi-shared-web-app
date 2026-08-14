@@ -210,6 +210,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [isRegistering, setIsRegistering] = useState(false);
   const [isAccountSaving, setIsAccountSaving] = useState(false);
   const [isAdminSaving, setIsAdminSaving] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
   const [logMemberFilterId, setLogMemberFilterId] = useState<string | null>(null);
   const [pointMemberFilterId, setPointMemberFilterId] = useState<string | null>(null);
   const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
@@ -986,6 +987,41 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       setStatusMessage(error instanceof Error ? error.message : "アカウント更新に失敗しました。");
     } finally {
       setIsAccountSaving(false);
+    }
+  }
+
+  async function handleBackfillClassification() {
+    if (!isMemberManagerUnlocked) {
+      setStatusMessage("Admin アカウントでログインしてください。");
+      return;
+    }
+
+    setIsBackfilling(true);
+    setStatusMessage("分類を反映しています…（件数が多いと少し時間がかかります）");
+
+    try {
+      const response = await fetch("/api/admin/backfill-classification", { method: "POST" });
+      const payload = (await response.json()) as {
+        updatedRows?: number;
+        matchedSpecies?: number;
+        unmatchedSpecies?: string[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "分類の一括反映に失敗しました。");
+      }
+
+      await refreshEverything();
+      const unmatched = payload.unmatchedSpecies ?? [];
+      const unmatchedNote =
+        unmatched.length > 0
+          ? `　※カタログに無く未反映の種: ${unmatched.length}件（${unmatched.slice(0, 5).join("、")}${unmatched.length > 5 ? " ほか" : ""}）`
+          : "";
+      setStatusMessage(`分類を反映しました。更新: ${payload.updatedRows ?? 0}件${unmatchedNote}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "分類の一括反映に失敗しました。");
+    } finally {
+      setIsBackfilling(false);
     }
   }
 
@@ -2893,6 +2929,23 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                       </button>
                     </div>
                   </form>
+
+                  <div className="admin-tool">
+                    <div>
+                      <h3 className="admin-tool-title">分類（目・科）の一括反映</h3>
+                      <p className="helper-text">
+                        目名・科名が空の観察記録に、種名から分類（目・科・学名）を自動で埋めます。CSV取り込みなどで分類が未入力の記録に使えます。すでに入力済みの分は上書きしません。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleBackfillClassification}
+                      disabled={isBackfilling}
+                    >
+                      {isBackfilling ? "反映中…" : "分類を一括反映"}
+                    </button>
+                  </div>
 
                   <div className="record-list">
                     {members.map((member) => (
