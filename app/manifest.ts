@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "虫の観察記録、ランキング、記録照会をスマホで管理できるムシムシ探検隊アプリ",
     start_url: "/",
     display: "standalone",
-    background_color: "#f7f2e9",
-    theme_color: "#f7f2e9",
+    background_color: "#f1f3ee",
+    theme_color: "#f1f3ee",
     lang: "ja",
     orientation: "portrait",
     icons: [

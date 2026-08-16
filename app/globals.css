@@ -5,7 +5,9 @@
    ========================================================================== */
 
 :root {
-  /* 色は素の :root に全て定義する（夜間モードはトークンの差し替えだけ） */
+  /* 明色1本で通す。OSがダークでも入力欄などが黒く反転しないよう color-scheme を明示する。 */
+  color-scheme: light;
+
   --paper: #f1f3ee;
   --card: #ffffff;
   --card-sunk: #f7f8f5;
@@ -42,62 +44,6 @@
 
   --bar-h: 52px;
   --nav-h: 58px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #0f1512;
-    --card: #161d19;
-    --card-sunk: #121814;
-    --ink: #e7ede8;
-    --ink-2: #9dada3;
-    --ink-3: #7b8a81;
-    --rule: #26302a;
-    --rule-strong: #374238;
-    --accent: #4cc094;
-    --accent-hover: #62d0a6;
-    --accent-soft: #16271f;
-    --accent-on: #0b1310;
-    --gold: #d9a441;
-    --gold-soft: #241e12;
-    --danger: #e5796d;
-    --danger-soft: #2a1815;
-
-    --heat-0: #1a231e;
-    --heat-1: #1e392e;
-    --heat-2: #275443;
-    --heat-3: #35785e;
-    --heat-4: #4cc094;
-
-    --pop: 0 10px 28px rgba(0, 0, 0, 0.55);
-  }
-}
-
-:root[data-theme="dark"] {
-  --paper: #0f1512;
-  --card: #161d19;
-  --card-sunk: #121814;
-  --ink: #e7ede8;
-  --ink-2: #9dada3;
-  --ink-3: #7b8a81;
-  --rule: #26302a;
-  --rule-strong: #374238;
-  --accent: #4cc094;
-  --accent-hover: #62d0a6;
-  --accent-soft: #16271f;
-  --accent-on: #0b1310;
-  --gold: #d9a441;
-  --gold-soft: #241e12;
-  --danger: #e5796d;
-  --danger-soft: #2a1815;
-
-  --heat-0: #1a231e;
-  --heat-1: #1e392e;
-  --heat-2: #275443;
-  --heat-3: #35785e;
-  --heat-4: #4cc094;
-
-  --pop: 0 10px 28px rgba(0, 0, 0, 0.55);
 }
 
 * {
