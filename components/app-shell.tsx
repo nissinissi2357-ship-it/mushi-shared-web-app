@@ -249,7 +249,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const csvImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedMember = members.find((member) => member.id === selectedMemberId);
-  const canViewRanking = true;
   const currentYear = new Date().getFullYear();
 
   const profileMember = profileMemberId
@@ -273,7 +272,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
   const filteredLogs = useMemo(() => {
     const scopedLogs =
-      canViewRanking && logMemberFilterId ? logs.filter((log) => log.memberId === logMemberFilterId) : logs;
+      logMemberFilterId ? logs.filter((log) => log.memberId === logMemberFilterId) : logs;
 
     const speciesQuery = logSearchSpecies.trim().toLocaleLowerCase("ja-JP");
     const locationQuery = logSearchLocation.trim().toLocaleLowerCase("ja-JP");
@@ -295,10 +294,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     return scopedLogs.filter((log) =>
       logSearchMode === "and" ? activeChecks.every((check) => check(log)) : activeChecks.some((check) => check(log))
     );
-  }, [canViewRanking, logMemberFilterId, logs, logSearchDate, logSearchLocation, logSearchMode, logSearchSpecies]);
+  }, [logMemberFilterId, logs, logSearchDate, logSearchLocation, logSearchMode, logSearchSpecies]);
 
   const filteredLogMemberName =
-    canViewRanking && logMemberFilterId
+    logMemberFilterId
       ? members.find((member) => member.id === logMemberFilterId)?.displayName || null
       : null;
 
@@ -307,15 +306,15 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const paginatedLogs = filteredLogs.slice((logsPage - 1) * logPageSize, logsPage * logPageSize);
 
   const filteredPointEntries = useMemo(() => {
-    if (!canViewRanking || !pointMemberFilterId) {
+    if (!pointMemberFilterId) {
       return pointEntries;
     }
 
     return pointEntries.filter((entry) => entry.memberId === pointMemberFilterId);
-  }, [canViewRanking, pointEntries, pointMemberFilterId]);
+  }, [pointEntries, pointMemberFilterId]);
 
   const filteredPointMemberName =
-    canViewRanking && pointMemberFilterId
+    pointMemberFilterId
       ? members.find((member) => member.id === pointMemberFilterId)?.displayName || null
       : null;
   const hasInquirySearch = Boolean(
@@ -451,6 +450,27 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     [selectedInquiryYearLogs]
   );
   const monthlyOrderCountSeries = useMemo(() => buildMonthlyOrderCountSeries(logs), [logs]);
+
+  const homeSummary = useMemo(() => {
+    const species = new Set<string>();
+    const locations = new Set<string>();
+
+    for (const log of logs) {
+      if (log.species) {
+        species.add(log.species.normalize("NFC").trim());
+      }
+      if (log.location) {
+        locations.add(log.location);
+      }
+    }
+
+    return {
+      recordCount: logs.length,
+      speciesCount: species.size,
+      memberCount: members.length,
+      locationCount: locations.size
+    };
+  }, [logs, members]);
 
   const rankingPeriodOptions = useMemo(
     () => buildRankingPeriodOptions(logs, pointEntries, currentYear),
@@ -679,7 +699,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
     try {
       const params = new URLSearchParams();
-      if (canViewRanking && logMemberFilterId) {
+      if (logMemberFilterId) {
         params.set("memberId", logMemberFilterId);
       }
 
@@ -746,7 +766,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     try {
       const formData = new FormData();
       formData.append("file", file);
-      if (canViewRanking && logMemberFilterId) {
+      if (logMemberFilterId) {
         formData.append("memberId", logMemberFilterId);
       }
 
@@ -1459,12 +1479,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       <header className="hero">
         <div className="hero-top">
           <div>
-            <p className="eyebrow">Shared Edition</p>
             <h1>ムシムシ探検隊</h1>
           </div>
 
           <div className="hero-menu">
-            {selectedMember ? <p className="hero-member">入力対象: {selectedMember.displayName}</p> : null}
             <div className="card-menu app-menu">
               <button
                 type="button"
@@ -1487,9 +1505,9 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             </div>
           </div>
         </div>
-
-        {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
       </header>
+
+      {statusMessage ? <p className="status-banner">{statusMessage}</p> : null}
 
       {memberProfile ? (
         <MemberProfileDialog
@@ -1509,7 +1527,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           <section className="alert-panel inquiry-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="inquiry-panel-head">
               <div>
-                <p className="section-label">Profile</p>
                 <h2>
                   {selectedInquirySpecies}
                   {selectedInquiryClassification?.scientificName ? (
@@ -1610,7 +1627,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <section className="inquiry-detail-block">
               <div className="inquiry-panel-head">
                 <div>
-                  <p className="section-label">Details</p>
                   <h4>詳細記録</h4>
                 </div>
                 <p className="helper-text">同じ日付・同じ場所の記録は件数でまとめています。</p>
@@ -1663,26 +1679,41 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
           </nav>
 
           {activeTab === "home" ? (
+            <>
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Home</p>
-                  <h2>ホーム</h2>
+                  <h2>これまでの記録</h2>
                 </div>
               </div>
 
-              <div className="home-copy">
-                <p>今年のランキングを中心に見られるホーム画面です。年が変わると、その年のポイントで新しく集計されます。</p>
-                <p>下のグラフでは、直近6か月の観察件数を目ごとの積み上げで確認できます。</p>
+              <div className="hero-stats">
+                <div className="summary-card">
+                  <span>記録</span>
+                  <strong>{homeSummary.recordCount.toLocaleString("ja-JP")}</strong>
+                </div>
+                <div className="summary-card">
+                  <span>種数</span>
+                  <strong>{homeSummary.speciesCount.toLocaleString("ja-JP")}</strong>
+                </div>
+                <div className="summary-card">
+                  <span>隊員</span>
+                  <strong>{homeSummary.memberCount.toLocaleString("ja-JP")}</strong>
+                </div>
+                <div className="summary-card">
+                  <span>地域</span>
+                  <strong>{homeSummary.locationCount.toLocaleString("ja-JP")}</strong>
+                </div>
               </div>
 
               <MonthlyOrderTrendChart data={monthlyOrderCountSeries} />
+            </section>
 
+            <section className="panel">
               <div className="home-map-block">
                 <div className="panel-head map-section-head">
                   <div>
-                    <p className="section-label">Map</p>
-                    <h3>記録マップ（全県）</h3>
+                    <h2>記録マップ（全県）</h2>
                     <p className="helper-text">
                       隊員全員の観察記録を、市町村ごとに件数が多いほど濃い色で表示します。
                     </p>
@@ -1707,11 +1738,12 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 )}
               </div>
+            </section>
 
+            <section className="panel">
               <div className="panel-head ranking-head">
                 <div>
-                  <p className="section-label">Ranking</p>
-                  <h3>{selectedRankingPeriodLabel}</h3>
+                  <h2>{selectedRankingPeriodLabel}</h2>
                 </div>
 
                 <label>
@@ -1728,94 +1760,111 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
               <div className="ranking-list">
                 {rankingSummaries.map((summary, index) => (
-                  <article
+                  <button
                     key={`${rankingPeriod}-${summary.memberId}`}
-                    className="ranking-item"
+                    type="button"
+                    className={index < 3 ? "ranking-item ranking-item-top" : "ranking-item"}
                     onClick={() => setProfileMemberId(summary.memberId)}
-                    style={{ cursor: "pointer" }}
                   >
                     <span className="ranking-rank">{index + 1}</span>
-                    <div>
-                      <p className="ranking-name">{summary.displayName}</p>
-                      <p className="ranking-meta">
-                        {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} / 観察
+                    <span>
+                      <span className="ranking-name">{summary.displayName}</span>
+                      <span className="ranking-meta">
+                        {summary.role === "captain" ? "隊長" : summary.role === "admin" ? "Admin" : "隊員"} ・ 観察
                         {summary.recordCount}件
-                      </p>
-                    </div>
-                    <div className="ranking-points">{summary.totalPoints}P</div>
-                  </article>
+                      </span>
+                    </span>
+                    <span className="ranking-points">{summary.totalPoints}P</span>
+                  </button>
                 ))}
               </div>
+
+              <p className="helper-text">行を押すと、その隊員の記録と観察マップが開きます。</p>
             </section>
+            </>
           ) : null}
 
           {activeTab === "record" ? (
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Record</p>
                   <h2>観察を登録する</h2>
                 </div>
               </div>
 
-              <form className="record-form" onSubmit={handleSubmit}>
-                <label>
-                  隊員
-                  <select
-                    value={selectedMemberId}
-                    onChange={(event) => setSelectedMemberId(event.target.value)}
-                    required
-                  >
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <form className="record-steps" onSubmit={handleSubmit}>
+                <div className="record-step">
+                  <span className="record-step-no" aria-hidden="true">1</span>
+                  <div className="record-step-body">
+                    <h3>誰の・いつの観察かを決める</h3>
 
-                <label className="full-width">
-                  LINE貼り付け
-                  <textarea
-                    rows={7}
-                    placeholder="隊長メッセージをここに貼り付けてください"
-                    value={linePaste}
-                    onChange={(event) => setLinePaste(event.target.value)}
-                  />
-                </label>
+                    <div className="record-form">
+                      <label>
+                        隊員
+                        <select
+                          value={selectedMemberId}
+                          onChange={(event) => setSelectedMemberId(event.target.value)}
+                          required
+                        >
+                          {members.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                <div className="form-actions full-width">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      const rawText = linePaste.trim();
-                      if (!rawText) {
-                        setParseStatus("まずは隊長メッセージを貼り付けてください。");
-                        return;
-                      }
-                      applyParsedToDraft(rawText);
-                    }}
-                  >
-                    貼り付けから自動入力
-                  </button>
-                  <button type="button" className="primary-button" onClick={handleQuickRegister} disabled={isSaving}>
-                    {isSaving ? "保存中..." : "貼り付けだけで保存"}
-                  </button>
+                      <label>
+                        観察日時
+                        <input
+                          type="datetime-local"
+                          value={draft.observedAt}
+                          onChange={(event) => setDraft((current) => ({ ...current, observedAt: event.target.value }))}
+                          required
+                        />
+                      </label>
+
+                      <label className="full-width">
+                        隊長メッセージ
+                        <textarea
+                          rows={6}
+                          placeholder="隊長メッセージをここに貼り付けてください"
+                          value={linePaste}
+                          onChange={(event) => setLinePaste(event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          const rawText = linePaste.trim();
+                          if (!rawText) {
+                            setParseStatus("まずは隊長メッセージを貼り付けてください。");
+                            return;
+                          }
+                          applyParsedToDraft(rawText);
+                        }}
+                      >
+                        貼り付けから自動入力
+                      </button>
+                      <button type="button" className="primary-button" onClick={handleQuickRegister} disabled={isSaving}>
+                        {isSaving ? "保存中..." : "貼り付けだけで保存"}
+                      </button>
+                    </div>
+
+                    <p className="parse-status">{parseStatus}</p>
+                  </div>
                 </div>
 
-                <p className="helper-text full-width">{parseStatus}</p>
+                <div className="record-step">
+                  <span className="record-step-no" aria-hidden="true">2</span>
+                  <div className="record-step-body">
+                    <h3>読み取った内容を確かめる</h3>
 
-                <label>
-                  観察日時
-                  <input
-                    type="datetime-local"
-                    value={draft.observedAt}
-                    onChange={(event) => setDraft((current) => ({ ...current, observedAt: event.target.value }))}
-                    required
-                  />
-                </label>
-
+                    <div className="record-form">
                 <label>
                   観察地域
                   <select
@@ -1833,6 +1882,19 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 </label>
 
                 <label>
+                  ポイント
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="例: 8"
+                    value={draft.points}
+                    onChange={(event) => setDraft((current) => ({ ...current, points: event.target.value }))}
+                    required
+                  />
+                </label>
+
+                <label className="full-width">
                   詳細な場所
                   <input
                     type="text"
@@ -1842,28 +1904,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 </label>
 
-                <div className="full-width map-field">
-                  <MapCoordinatePicker
-                    latitude={draft.latitude}
-                    longitude={draft.longitude}
-                    locationDetail={draft.locationDetail}
-                    onChange={(coords) =>
-                      setDraft((current) => ({
-                        ...current,
-                        latitude: coords.latitude,
-                        longitude: coords.longitude
-                      }))
-                    }
-                    onAddressResolved={(result) =>
-                      setDraft((current) => ({
-                        ...current,
-                        locationDetail: result.locationDetail || current.locationDetail
-                      }))
-                    }
-                  />
-                </div>
-
-                <label>
+                <label className="full-width">
                   種名
                   <input
                     type="text"
@@ -1913,19 +1954,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 </label>
 
-                <label>
-                  ポイント
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="例: 8"
-                    value={draft.points}
-                    onChange={(event) => setDraft((current) => ({ ...current, points: event.target.value }))}
-                    required
-                  />
-                </label>
-
                 <label className="full-width">
                   隊長メモ
                   <textarea
@@ -1936,30 +1964,61 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   />
                 </label>
 
-                <label>
+                <label className="full-width">
                   写真
                   <input type="file" accept="image/*" onChange={handlePhotoChange} />
                 </label>
-                <p className="helper-text">{draftPhotoMessage}</p>
+                    </div>
 
-                <p className="helper-text">写真の共有保存は次の段階で対応予定です。</p>
+                    <p className="helper-text">{draftPhotoMessage}</p>
+                    <p className="helper-text">写真の共有保存は次の段階で対応予定です。</p>
+                  </div>
+                </div>
 
-                <div className="form-actions full-width">
-                  <button type="submit" className="primary-button" disabled={isSaving}>
-                    {isSaving ? "保存中..." : "保存する"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      setDraft(getDefaultObservationDraft());
-                      setLinePaste("");
-                      setParseStatus(defaultParseStatus);
-                    }}
-                    disabled={isSaving}
-                  >
-                    入力をクリア
-                  </button>
+                <div className="record-step">
+                  <span className="record-step-no" aria-hidden="true">3</span>
+                  <div className="record-step-body">
+                    <h3>場所を地図で指す（任意）</h3>
+
+                    <div className="map-field">
+                      <MapCoordinatePicker
+                        latitude={draft.latitude}
+                        longitude={draft.longitude}
+                        locationDetail={draft.locationDetail}
+                        onChange={(coords) =>
+                          setDraft((current) => ({
+                            ...current,
+                            latitude: coords.latitude,
+                            longitude: coords.longitude
+                          }))
+                        }
+                        onAddressResolved={(result) =>
+                          setDraft((current) => ({
+                            ...current,
+                            locationDetail: result.locationDetail || current.locationDetail
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="form-actions">
+                      <button type="submit" className="primary-button" disabled={isSaving}>
+                        {isSaving ? "保存中..." : "保存する"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setDraft(getDefaultObservationDraft());
+                          setLinePaste("");
+                          setParseStatus(defaultParseStatus);
+                        }}
+                        disabled={isSaving}
+                      >
+                        入力をクリア
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </form>
             </section>
@@ -1969,28 +2028,25 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Logs</p>
                   <h2>観察ログ</h2>
                   {filteredLogMemberName ? <p className="helper-text">{filteredLogMemberName} さんのログを表示中です。</p> : null}
                 </div>
 
                 <div className="toolbar-row logs-toolbar">
-                  {canViewRanking ? (
-                    <label className="logs-filter-field">
-                      隊員で絞り込み
-                      <select
-                        value={logMemberFilterId ?? ""}
-                        onChange={(event) => setLogMemberFilterId(event.target.value || null)}
-                      >
-                        <option value="">全員</option>
-                        {members.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.displayName}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
+                  <label className="logs-filter-field">
+                    隊員で絞り込み
+                    <select
+                      value={logMemberFilterId ?? ""}
+                      onChange={(event) => setLogMemberFilterId(event.target.value || null)}
+                    >
+                      <option value="">全員</option>
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
                   <button
                     type="button"
@@ -2050,7 +2106,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 {isLogSearchOpen ? (
                   <div className="search-panel">
                     <div className="search-panel-head">
-                      <p className="section-label">Search</p>
                       <div className="inline-actions">
                         <button
                           type="button"
@@ -2157,7 +2212,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   return (
                     <article
                       key={log.id}
-                      className={highlightedLogId === log.id ? "record-card record-card-highlighted" : "record-card"}
+                      className={[
+                        "record-card",
+                        editingLogId === log.id ? "record-card-editing" : "",
+                        highlightedLogId === log.id ? "record-card-highlighted" : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                     >
                       {editingLogId === log.id ? (
                         <div className="editor-grid">
@@ -2300,24 +2361,50 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                         </div>
                       ) : (
                         <>
-                          <div className="record-top">
-                            <div>
-                              <p className="record-meta">{formatDateTime(log.observedAt)}</p>
-                              {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
-                              <ClassificationMeta
-                                orderName={log.orderName}
-                                familyName={log.familyName}
-                              />
-                              <h3 className="record-species">
-                                <span>{log.species}</span>
-                                {log.scientificName ? (
-                                  <>
-                                    {" "}
-                                    <span className="scientific-name">{log.scientificName}</span>
-                                  </>
+                          <ObservedAtStamp value={log.observedAt} />
+
+                          <div className="record-main">
+                            <ClassificationMeta
+                              orderName={log.orderName}
+                              familyName={log.familyName}
+                            />
+                            <h3 className="record-species">{log.species}</h3>
+                            {log.scientificName ? (
+                              <p className="scientific-name">{log.scientificName}</p>
+                            ) : null}
+
+                            <p className="record-location">
+                              <PinIcon />
+                              <span>
+                                {log.location}
+                                {log.locationDetail ? (
+                                  <span className="record-location-detail"> ／ {log.locationDetail}</span>
                                 ) : null}
-                              </h3>
-                            </div>
+                              </span>
+                            </p>
+
+                            <p className="record-member">
+                              <PersonIcon />
+                              <span>{memberName}</span>
+                            </p>
+
+                            {log.latitude !== null && log.latitude !== undefined && log.longitude !== null && log.longitude !== undefined ? (
+                              <p className="record-meta">
+                                緯度 {log.latitude.toFixed(5)} / 経度 {log.longitude.toFixed(5)} ・{" "}
+                                <a
+                                  href={`https://www.openstreetmap.org/?mlat=${log.latitude}&mlon=${log.longitude}#map=15/${log.latitude}/${log.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  地図で見る
+                                </a>
+                              </p>
+                            ) : null}
+
+                            {log.scoringMemo ? <p className="record-memo">{log.scoringMemo}</p> : null}
+                          </div>
+
+                          <div className="record-side">
                             <div className="record-top-actions">
                               <div className="point-badge">{log.points}P</div>
                               {canManage ? (
@@ -2345,33 +2432,17 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                                 </div>
                               ) : null}
                             </div>
-                          </div>
 
-                          <p className="record-location">{formatObservationLocation(log.location, log.locationDetail)}</p>
-                          {log.latitude !== null && log.latitude !== undefined && log.longitude !== null && log.longitude !== undefined ? (
-                            <p className="record-meta">
-                              緯度 {log.latitude.toFixed(5)} / 経度 {log.longitude.toFixed(5)} ・{" "}
-                              <a
-                                href={`https://www.openstreetmap.org/?mlat=${log.latitude}&mlon=${log.longitude}#map=15/${log.latitude}/${log.longitude}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                地図で見る
-                              </a>
-                            </p>
-                          ) : null}
-                          <p className="record-memo">{log.scoringMemo || "メモなし"}</p>
+                            <div className="record-assets">
+                              {log.imageUrl ? (
+                                <span className="photo-thumbnail">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={log.imageUrl} alt={log.species} />
+                                </span>
+                              ) : null}
 
-                          <div className="record-assets">
-                            {log.imageUrl ? (
-                              <div className="photo-thumbnail">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={log.imageUrl} alt={log.species} />
-                                <span className="photo-thumbnail-label">写真あり</span>
-                              </div>
-                            ) : null}
-
-                            {log.guidePdfUrl ? <span className="asset-label">PDFあり</span> : null}
+                              {log.guidePdfUrl ? <span className="asset-label">PDF</span> : null}
+                            </div>
                           </div>
                         </>
                       )}
@@ -2416,7 +2487,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Inquiry</p>
                   <h2>記録照会</h2>
                   <p className="helper-text">全隊員の観察記録から、目・科・種名ごとの出現状況を年ごとに確認できます。</p>
                 </div>
@@ -2449,7 +2519,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 {isInquirySearchOpen ? (
                   <div className="search-panel">
                     <div className="search-panel-head">
-                      <p className="section-label">Search</p>
                       <div className="inline-actions">
                         <button
                           type="button"
@@ -2560,7 +2629,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <section className="inquiry-detail-block">
                   <div className="inquiry-panel-head">
                     <div>
-                      <p className="section-label">Occurrence</p>
                       <h3>出現数表</h3>
                     </div>
                     <div className="inline-actions">
@@ -2609,7 +2677,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                 <section className="inquiry-species-panel">
                   <div className="inquiry-panel-head">
                     <div>
-                      <p className="section-label">List</p>
                       <h3>{selectedInquiryOrder ? `${selectedInquiryOrder}目の種一覧` : "目一覧"}</h3>
                     </div>
                     <p className="helper-text">
@@ -2691,27 +2758,24 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Points</p>
                   <h2>追加ポイント</h2>
                   {filteredPointMemberName ? <p className="helper-text">{filteredPointMemberName} さんの追加ポイントを表示中です。</p> : null}
                 </div>
 
-                {canViewRanking ? (
-                  <label>
-                    隊員で絞り込み
-                    <select
-                      value={pointMemberFilterId ?? ""}
-                      onChange={(event) => setPointMemberFilterId(event.target.value || null)}
-                    >
-                      <option value="">全員</option>
-                      {members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
+                <label>
+                  隊員で絞り込み
+                  <select
+                    value={pointMemberFilterId ?? ""}
+                    onChange={(event) => setPointMemberFilterId(event.target.value || null)}
+                  >
+                    <option value="">全員</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               <form className="record-form" onSubmit={handlePointSubmit}>
@@ -2789,11 +2853,11 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                   const canManage = canManageMemberData(entry.memberId);
 
                   return (
-                    <article key={entry.id} className="record-card">
+                    <article key={entry.id} className="record-card record-card-plain">
                       <div className="record-top">
                         <div>
                           <p className="record-meta">{formatDateTime(entry.awardedAt)}</p>
-                          {canViewRanking ? <p className="record-meta">{memberName}</p> : null}
+                          <p className="record-meta">{memberName}</p>
                           <h3 className="record-species">{entry.title}</h3>
                         </div>
                         <div className="record-top-actions">
@@ -2843,7 +2907,6 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             <section className="panel">
               <div className="panel-head">
                 <div>
-                  <p className="section-label">Members</p>
                   <h2>隊員管理</h2>
                   <p className="helper-text">ここでは隊員の追加、権限変更、合言葉の初期化、削除ができます。</p>
                 </div>
@@ -2949,7 +3012,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
 
                   <div className="record-list">
                     {members.map((member) => (
-                      <article key={member.id} className="record-card">
+                      <article key={member.id} className="record-card record-card-plain">
                         <div className="record-top">
                           <div>
                             <p className="record-meta">{member.role === "captain" ? "隊長" : member.role === "admin" ? "Admin" : "隊員"}</p>
@@ -3368,7 +3431,6 @@ function MapCoordinatePicker({
     <div className="coordinate-picker">
       <div className="coordinate-picker-head">
         <div>
-          <p className="section-label">Map</p>
           <strong className="map-title">地図から場所を選ぶ</strong>
         </div>
         <p className="helper-text">任意項目です。必要なときだけ地図を大きく開いて選べます。</p>
@@ -3437,7 +3499,6 @@ function MapCoordinatePicker({
           <section className="alert-panel inquiry-dialog map-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="map-dialog-head">
               <div>
-                <p className="section-label">Map</p>
                 <h2>地図から場所を選ぶ</h2>
                 <p className="helper-text map-help">
                   ドラッグで移動、ピンチやホイール、右上の + / - で拡大縮小できます。タップで座標を選べます。
@@ -3584,6 +3645,61 @@ function AppNavIcon({ tabId }: { tabId: TabId }) {
   );
 }
 
+/** 標本ラベルの左側。月・日・時刻を縦に積む。 */
+function ObservedAtStamp({ value }: { value: string | null }) {
+  const date = value ? new Date(value) : null;
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return (
+      <div className="record-date">
+        <span className="record-date-month">日付</span>
+        <b className="record-date-day">—</b>
+      </div>
+    );
+  }
+
+  const pad = (input: number) => String(input).padStart(2, "0");
+
+  return (
+    <div className="record-date">
+      <span className="record-date-month">{date.getMonth() + 1}月</span>
+      <b className="record-date-day">{pad(date.getDate())}</b>
+      <span className="record-date-time">
+        {pad(date.getHours())}:{pad(date.getMinutes())}
+      </span>
+    </div>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="10" r="2.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M5.6 19.4c1.2-3.1 3.6-4.7 6.4-4.7s5.2 1.6 6.4 4.7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function ClassificationMeta({
   orderName,
   familyName,
@@ -3614,6 +3730,7 @@ function MonthlyOrderTrendChart({
     segments: Array<{ key: string; label: string; count: number; color: string }>;
   }>;
 }) {
+  const [isLegendExpanded, setIsLegendExpanded] = useState(false);
   const width = 640;
   const height = 220;
   const paddingX = 36;
@@ -3654,19 +3771,26 @@ function MonthlyOrderTrendChart({
 
   const legendOrders = Array.from(
     new Map(data.flatMap((item) => item.segments.map((segment) => [segment.key, segment] as const))).values()
-  ).map((order) => ({
-    ...order,
-    totalCount: data.reduce(
-      (sum, item) => sum + (item.segments.find((segment) => segment.key === order.key)?.count ?? 0),
-      0
-    )
-  }));
+  )
+    .map((order) => ({
+      ...order,
+      totalCount: data.reduce(
+        (sum, item) => sum + (item.segments.find((segment) => segment.key === order.key)?.count ?? 0),
+        0
+      )
+    }))
+    .sort((left, right) => right.totalCount - left.totalCount);
+
+  // 目は30近くあり、全部並べるとスマホで数画面分になる。上位だけ出して残りは畳む。
+  const legendTopCount = 5;
+  const visibleLegend = isLegendExpanded ? legendOrders : legendOrders.slice(0, legendTopCount);
+  const hiddenLegend = legendOrders.slice(legendTopCount);
+  const hiddenLegendTotal = hiddenLegend.reduce((sum, order) => sum + order.totalCount, 0);
 
   return (
     <section className="trend-card">
       <div className="trend-head">
         <div>
-          <p className="section-label">Trend</p>
           <h3>月別の目ごとの観察件数</h3>
         </div>
         <p className="helper-text">直近6か月の観察記録を、目ごとの件数で積み上げ表示しています。</p>
@@ -3708,14 +3832,32 @@ function MonthlyOrderTrendChart({
           </svg>
 
           <div className="trend-legend">
-            {legendOrders.map((order) => (
+            {visibleLegend.map((order) => (
               <div key={order.key} className="trend-legend-item">
                 <span className="trend-legend-swatch" style={{ backgroundColor: order.color }} />
-                <strong>{order.label}</strong>
-                <small>{order.totalCount}件</small>
+                <span>{order.label}</span>
+                <strong>{order.totalCount.toLocaleString("ja-JP")}</strong>
               </div>
             ))}
+
+            {!isLegendExpanded && hiddenLegend.length > 0 ? (
+              <div className="trend-legend-item">
+                <span className="trend-legend-swatch" style={{ backgroundColor: "var(--ink-3)" }} />
+                <span>ほか{hiddenLegend.length}目</span>
+                <strong>{hiddenLegendTotal.toLocaleString("ja-JP")}</strong>
+              </div>
+            ) : null}
           </div>
+
+          {hiddenLegend.length > 0 ? (
+            <button
+              type="button"
+              className="ghost-button trend-legend-more"
+              onClick={() => setIsLegendExpanded((current) => !current)}
+            >
+              {isLegendExpanded ? "上位5目だけ表示" : `目別の内訳をすべて表示（${legendOrders.length}目）`}
+            </button>
+          ) : null}
         </>
       )}
     </section>

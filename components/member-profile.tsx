@@ -228,7 +228,6 @@ export function MemberProfileDialog({
       >
         <div className="profile-head">
           <div>
-            <p className="section-label">Profile</p>
             <h2>{profile.member.displayName}</h2>
             <p className="helper-text">{roleLabel}の観察実績レポート</p>
           </div>
