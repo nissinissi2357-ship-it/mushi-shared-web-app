@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/format";
 import { resizeImageBeforeUpload } from "@/lib/image";
 import { LOCATION_OPTIONS } from "@/lib/locations";
 import { parseCaptainMessage } from "@/lib/line-parser";
+import { findDuplicateCandidates, type DuplicateCandidate } from "@/lib/duplicate-check";
 import { buildAreaCounts, buildMapPeriodOptions, buildMemberProfile } from "@/lib/profile";
 import { lookupSpeciesClassification } from "@/lib/species-classification";
 import type {
@@ -61,6 +62,15 @@ type DraftObservation = {
   scientificName: string;
   points: string;
   scoringMemo: string;
+};
+
+/** 二重登録の確認待ち。保存はこの確認を通ってから行う。 */
+type PendingDuplicate = {
+  mode: "create" | "update";
+  draft: DraftObservation;
+  memberId: string;
+  logId: string | null;
+  candidates: DuplicateCandidate[];
 };
 
 type DraftPointEntry = {
@@ -190,6 +200,7 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editingLogDraft, setEditingLogDraft] = useState<DraftObservation>(getDefaultObservationDraft);
   const [editingPointEntryId, setEditingPointEntryId] = useState<string | null>(null);
+  const [pendingDuplicate, setPendingDuplicate] = useState<PendingDuplicate | null>(null);
   const [linePaste, setLinePaste] = useState("");
   const [parseStatus, setParseStatus] = useState(defaultParseStatus);
   const [registerDraft, setRegisterDraft] = useState<RegisterDraft>({ displayName: "", passcode: "" });
@@ -257,6 +268,33 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
   const memberProfile = useMemo(
     () => (profileMember ? buildMemberProfile(profileMember, logs, pointEntries) : null),
     [profileMember, logs, pointEntries]
+  );
+
+  // 入力中にも気づけるように、保存を押す前から候補を出しておく。
+  const draftDuplicates = useMemo(
+    () =>
+      selectedMemberId && draft.species.trim()
+        ? findDuplicateCandidates(
+            {
+              memberId: selectedMemberId,
+              observedAt: draft.observedAt,
+              location: draft.location,
+              locationDetail: draft.locationDetail,
+              species: draft.species,
+              points: Number(draft.points)
+            },
+            logs
+          )
+        : [],
+    [
+      logs,
+      selectedMemberId,
+      draft.observedAt,
+      draft.location,
+      draft.locationDetail,
+      draft.species,
+      draft.points
+    ]
   );
 
   const homeMapPeriodOptions = useMemo(() => buildMapPeriodOptions(logs), [logs]);
@@ -1216,10 +1254,32 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     revealSavedLog(viewer, payload.log);
   }
 
+  function collectDuplicates(target: DraftObservation, memberId: string, excludeLogId: string | null = null) {
+    return findDuplicateCandidates(
+      {
+        memberId,
+        observedAt: target.observedAt,
+        location: target.location,
+        locationDetail: target.locationDetail,
+        species: target.species,
+        points: Number(target.points)
+      },
+      logs,
+      { excludeLogId }
+    );
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedMemberId) {
       setStatusMessage("先に隊員を選んでください。");
+      return;
+    }
+
+    const candidates = collectDuplicates(draft, selectedMemberId);
+    if (candidates.length > 0) {
+      setStatusMessage(null);
+      setPendingDuplicate({ mode: "create", draft, memberId: selectedMemberId, logId: null, candidates });
       return;
     }
 
@@ -1272,6 +1332,13 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       return;
     }
 
+    const candidates = collectDuplicates(nextDraft, selectedMemberId);
+    if (candidates.length > 0) {
+      setStatusMessage(null);
+      setPendingDuplicate({ mode: "create", draft: nextDraft, memberId: selectedMemberId, logId: null, candidates });
+      return;
+    }
+
     setIsSaving(true);
     setStatusMessage(null);
 
@@ -1279,6 +1346,36 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
       await saveObservation(nextDraft);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "観察ログの保存に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  /** 確認ダイアログで「このまま登録する」を選んだあとの実処理。 */
+  async function commitPendingDuplicate() {
+    const pending = pendingDuplicate;
+    if (!pending) {
+      return;
+    }
+
+    setPendingDuplicate(null);
+    setIsSaving(true);
+    setStatusMessage(null);
+
+    try {
+      if (pending.mode === "create") {
+        await saveObservation(pending.draft);
+      } else if (pending.logId) {
+        await commitUpdateLog(pending.logId, pending.draft);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : pending.mode === "create"
+            ? "観察ログの保存に失敗しました。"
+            : "観察ログの更新に失敗しました。"
+      );
     } finally {
       setIsSaving(false);
     }
@@ -1302,39 +1399,57 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
     });
   }
 
+  async function commitUpdateLog(logId: string, nextDraft: DraftObservation) {
+    const response = await fetch(`/api/observations/${logId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        observedAt: new Date(nextDraft.observedAt).toISOString(),
+        location: nextDraft.location,
+        locationDetail: nextDraft.locationDetail,
+        latitude: nextDraft.latitude ? Number(nextDraft.latitude) : null,
+        longitude: nextDraft.longitude ? Number(nextDraft.longitude) : null,
+        orderName: nextDraft.orderName,
+        familyName: nextDraft.familyName,
+        species: nextDraft.species,
+        scientificName: nextDraft.scientificName,
+        points: Number(nextDraft.points),
+        scoringMemo: nextDraft.scoringMemo
+      })
+    });
+
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error || "観察ログの更新に失敗しました。");
+    }
+
+    await refreshViewerState();
+    setEditingLogId(null);
+    setStatusMessage("観察ログを更新しました。");
+  }
+
   async function handleUpdateLog(logId: string) {
+    const editingMemberId = logs.find((log) => log.id === logId)?.memberId ?? selectedMemberId;
+    const candidates = collectDuplicates(editingLogDraft, editingMemberId, logId);
+    if (candidates.length > 0) {
+      setStatusMessage(null);
+      setPendingDuplicate({
+        mode: "update",
+        draft: editingLogDraft,
+        memberId: editingMemberId,
+        logId,
+        candidates
+      });
+      return;
+    }
+
     setIsSaving(true);
     setStatusMessage(null);
 
     try {
-      const response = await fetch(`/api/observations/${logId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json"
-        },
-          body: JSON.stringify({
-            observedAt: new Date(editingLogDraft.observedAt).toISOString(),
-            location: editingLogDraft.location,
-            locationDetail: editingLogDraft.locationDetail,
-            latitude: editingLogDraft.latitude ? Number(editingLogDraft.latitude) : null,
-            longitude: editingLogDraft.longitude ? Number(editingLogDraft.longitude) : null,
-            orderName: editingLogDraft.orderName,
-            familyName: editingLogDraft.familyName,
-            species: editingLogDraft.species,
-            scientificName: editingLogDraft.scientificName,
-            points: Number(editingLogDraft.points),
-            scoringMemo: editingLogDraft.scoringMemo
-        })
-      });
-
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "観察ログの更新に失敗しました。");
-      }
-
-      await refreshViewerState();
-      setEditingLogId(null);
-      setStatusMessage("観察ログを更新しました。");
+      await commitUpdateLog(logId, editingLogDraft);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "観察ログの更新に失敗しました。");
     } finally {
@@ -1520,6 +1635,65 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
             setActiveTab("logs");
           }}
         />
+      ) : null}
+
+      {pendingDuplicate ? (
+        <div className="alert-overlay" onClick={() => setPendingDuplicate(null)}>
+          <section
+            className="alert-panel dup-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dup-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="dup-dialog-title">
+              {pendingDuplicate.candidates.some((candidate) => candidate.level === "high")
+                ? "同じ記録がすでにあるようです"
+                : "よく似た記録がすでにあります"}
+            </h2>
+            <p className="helper-text">
+              {pendingDuplicate.mode === "create"
+                ? "これから登録しようとしている内容と、次の記録が重なっています。"
+                : "編集後の内容と、次の記録が重なっています。"}
+            </p>
+
+            <div className="dup-dialog-current">
+              <span className="dup-dialog-current-label">
+                {pendingDuplicate.mode === "create" ? "登録しようとしている内容" : "編集後の内容"}
+              </span>
+              <p className="dup-item-meta">
+                {pendingDuplicate.draft.species}
+                {" ／ "}
+                {formatDateTime(new Date(pendingDuplicate.draft.observedAt).toISOString())}
+                {" ／ "}
+                {pendingDuplicate.draft.location || "地域未選択"}
+                {pendingDuplicate.draft.locationDetail ? `（${pendingDuplicate.draft.locationDetail}）` : ""}
+                {" ／ "}
+                {pendingDuplicate.draft.points || "0"}P
+              </p>
+            </div>
+
+            <DuplicateNotice candidates={pendingDuplicate.candidates} members={members} variant="dialog" />
+
+            <div className="form-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setPendingDuplicate(null)}
+                disabled={isSaving}
+              >
+                やめて見直す
+              </button>
+              <button type="button" className="primary-button" onClick={commitPendingDuplicate} disabled={isSaving}>
+                {isSaving
+                  ? "保存中..."
+                  : pendingDuplicate.mode === "create"
+                    ? "別の記録として登録する"
+                    : "このまま更新する"}
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {selectedInquirySpecies ? (
@@ -2000,6 +2174,10 @@ export function AppShell({ initialMembers, source, warning, initialViewer }: App
                         }
                       />
                     </div>
+
+                    {draftDuplicates.length > 0 ? (
+                      <DuplicateNotice candidates={draftDuplicates} members={members} variant="inline" />
+                    ) : null}
 
                     <div className="form-actions">
                       <button type="submit" className="primary-button" disabled={isSaving}>
@@ -3642,6 +3820,53 @@ function AppNavIcon({ tabId }: { tabId: TabId }) {
       <circle cx="8" cy="16" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
       <path d="M10 8h3.8M8 10.2v3.6M10 16h3.8M16 10.2v3.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/** 二重登録の候補一覧。入力中の注意書きと、保存前の確認ダイアログで共用する。 */
+function DuplicateNotice({
+  candidates,
+  members,
+  variant
+}: {
+  candidates: DuplicateCandidate[];
+  members: Member[];
+  variant: "inline" | "dialog";
+}) {
+  const hasHigh = candidates.some((candidate) => candidate.level === "high");
+
+  return (
+    <div className={`dup-notice dup-notice-${variant} ${hasHigh ? "dup-notice-high" : "dup-notice-medium"}`}>
+      {variant === "inline" ? (
+        <p className="dup-notice-lead">
+          {hasHigh
+            ? "同じ内容の記録がすでにあります。二重登録かどうか確かめてください。"
+            : "よく似た記録がすでにあります。念のため確かめてください。"}
+        </p>
+      ) : null}
+
+      <ul className="dup-list">
+        {candidates.map((candidate) => (
+          <li key={candidate.log.id} className={`dup-item dup-item-${candidate.level}`}>
+            <div className="dup-item-head">
+              <span className="dup-item-species">{candidate.log.species}</span>
+              <span className="dup-item-badge">{candidate.level === "high" ? "ほぼ同じ" : "似ている"}</span>
+            </div>
+            <p className="dup-item-meta">
+              {formatDateTime(candidate.log.observedAt)}
+              {" ／ "}
+              {candidate.log.location}
+              {candidate.log.locationDetail ? `（${candidate.log.locationDetail}）` : ""}
+              {" ／ "}
+              {candidate.log.points}P
+              {" ／ "}
+              {members.find((member) => member.id === candidate.log.memberId)?.displayName ?? "隊員不明"}
+            </p>
+            <p className="dup-item-reasons">{candidate.reasons.join("・")}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

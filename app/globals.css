@@ -1429,6 +1429,104 @@ input[type="date"] {
   overflow: auto;
 }
 
+/* ===== 二重登録の確認 ==================================================== */
+
+.dup-dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.dup-dialog-current {
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--card-sunk);
+}
+
+.dup-dialog-current-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
+.dup-notice-inline {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--r-ctl);
+  background: var(--gold-soft);
+}
+
+.dup-notice-inline.dup-notice-high {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.dup-notice-lead {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dup-item {
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--card);
+}
+
+.dup-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dup-item-species {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.dup-item-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--r-chip);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.dup-item-high .dup-item-badge {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.dup-item-meta {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.dup-item-reasons {
+  margin: 3px 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
 /* ===== 隊員プロフィール ================================================== */
 
 .profile-dialog {
